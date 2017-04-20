@@ -14,6 +14,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Threading.Tasks;
 using Google.Protobuf;
 using IopCommon;
+using Iop.Shared;
 
 namespace NetworkSimulator
 {

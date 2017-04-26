@@ -716,7 +716,7 @@ namespace NetworkSimulator
     {
       log.Trace("()");
 
-      LocProtocolMessage res = MessageBuilder.CreateRegisterServiceResponse(RequestMessage);
+      LocProtocolMessage res = MessageBuilder.CreateRegisterServiceResponse(RequestMessage, new IopProtocol.GpsLocation(nodeLocation.Latitude, nodeLocation.Longitude));
 
       RegisterServiceRequest registerServiceRequest = RequestMessage.Request.LocalService.RegisterService;
 

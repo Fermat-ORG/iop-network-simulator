@@ -7,11 +7,11 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{04094AE5-A23
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NetworkSimulator", "src\NetworkSimulator\NetworkSimulator.csproj", "{820FE8D1-C3E9-4640-A34A-137041045079}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "IopCommon", "..\iop-server-library\src\IopCommon\IopCommon.csproj", "{570CFA3E-D834-4CD7-B65C-5458D01E615B}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "IopCommon", "..\iop-sdk-netcore\src\IopCommon\IopCommon.csproj", "{570CFA3E-D834-4CD7-B65C-5458D01E615B}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "IopProtocol", "..\iop-server-library\src\IopProtocol\IopProtocol.csproj", "{3ABBCBD5-9891-4AEB-8666-1003A53CBDEF}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "IopProtocol", "..\iop-sdk-netcore\src\IopProtocol\IopProtocol.csproj", "{3ABBCBD5-9891-4AEB-8666-1003A53CBDEF}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "IopCrypto", "..\iop-server-library\src\IopCrypto\IopCrypto.csproj", "{A6022C73-489A-499F-AE8D-B2D4D95B8F8B}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "IopCrypto", "..\iop-sdk-netcore\src\IopCrypto\IopCrypto.csproj", "{A6022C73-489A-499F-AE8D-B2D4D95B8F8B}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

@@ -22,9 +22,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\iop-server-library\src\IopCommon\IopCommon.csproj" />
-    <ProjectReference Include="..\..\..\iop-server-library\src\IopCrypto\IopCrypto.csproj" />
-    <ProjectReference Include="..\..\..\iop-server-library\src\IopProtocol\IopProtocol.csproj" />
+    <ProjectReference Include="..\..\..\iop-sdk-netcore\src\IopCommon\IopCommon.csproj" />
+    <ProjectReference Include="..\..\..\iop-sdk-netcore\src\IopCrypto\IopCrypto.csproj" />
+    <ProjectReference Include="..\..\..\iop-sdk-netcore\src\IopProtocol\IopProtocol.csproj" />
   </ItemGroup>
 
   <ItemGroup>

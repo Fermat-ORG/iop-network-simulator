@@ -248,10 +248,16 @@ namespace NetworkSimulator
     public int Radius;
 
     /// <summary>File name mask in the image folder that define which images can be randomly selected for identity profiles.</summary>
-    public string ImageMask;
+    public string ProfileImageMask;
 
     /// <summary>An integer between 0 and 100 that specifies the chance of each instance to have a profile image set.</summary>
-    public int ImageChance;
+    public int ProfileImageChance;
+
+    /// <summary>File name mask in the image folder that define which images can be randomly selected for identity thumbnail images.</summary>
+    public string ThumbnailImageMask;
+
+    /// <summary>An integer between 0 and 100 that specifies the chance of each instance to have a thumbnail image set.</summary>
+    public int ThumbnailImageChance;
 
     /// <summary>Name of the server group, which servers are going to host the newly created identities.</summary>
     public string PsGroup;

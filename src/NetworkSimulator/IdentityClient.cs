@@ -26,35 +26,8 @@ namespace NetworkSimulator
     /// <summary>Instance logger.</summary>
     private Logger log;
 
-    /// <summary>Identity name.</summary>
-    private string name;
-    /// <summary>Identity name.</summary>
-    public string Name { get { return name; } }
-
-    /// <summary>Identity Type.</summary>
-    private string type;
-
-    /// <summary>Initial GPS location.</summary>
-    private GpsLocation location;
-
-    /// <summary>Profile image file name or null if the identity has no profile image.</summary>
-    private string imageFileName;
-
-    /// <summary>Profile image data or null if the identity has no profile image.</summary>
-    private byte[] profileImage;
-    /// <summary>Profile image data or null if the identity has no profile image.</summary>
-    public byte[] ProfileImage { get { return profileImage; } }
-
-    /// <summary>Thumbnail image data or null if the identity has no thumbnail image.</summary>
-    private byte[] thumbnailImage;
-    /// <summary>Thumbnail image data or null if the identity has no thumbnail image.</summary>
-    public byte[] ThumbnailImage { get { return thumbnailImage; } }
-
-    /// <summary>Profile extra data information.</summary>
-    private string extraData;
-
-    /// <summary>Profile version.</summary>
-    private SemVer version;
+    /// <summary>Information about client's profile.</summary>
+    public ClientProfile Profile;
 
     /// <summary>Profile server hosting the identity profile.</summary>
     private ProfileServer profileServer;
@@ -108,27 +81,38 @@ namespace NetworkSimulator
     /// <param name="Name">Identity name.</param>
     /// <param name="Type">Identity type.</param>
     /// <param name="Location">Initial GPS location.</param>
-    /// <param name="ImageMask">File name mask in the images folder that define which images can be randomly selected for profile image.</param>
-    /// <param name="ImageChance">An integer between 0 and 100 that specifies the chance of each instance to have a profile image set.</param>
-    public IdentityClient(string Name, string Type, GpsLocation Location, string ImageMask, int ImageChance)
+    /// <param name="ProfileImageMask">File name mask in the images folder that define which images can be randomly selected for profile image.</param>
+    /// <param name="ProfileImageChance">An integer between 0 and 100 that specifies the chance of each instance to have a profile image set.</param>
+    /// <param name="ThumbnailImageMask">File name mask in the images folder that define which images can be randomly selected for thumbnail image.</param>
+    /// <param name="ThumbnailImageChance">An integer between 0 and 100 that specifies the chance of each instance to have a profile image set.</param>
+    public IdentityClient(string Name, string Type, GpsLocation Location, string ProfileImageMask, int ProfileImageChance, string ThumbnailImageMask, int ThumbnailImageChance)
     {
       log = new Logger("NetworkSimulator.IdentityClient", "[" + Name + "] ");
-      log.Trace("(Name:'{0}',Type:'{1}',Location:{2},ImageMask:'{3}',ImageChance:{4})", Name, Type, Location, ImageMask, ImageChance);
+      log.Trace("(Name:'{0}',Type:'{1}',Location:{2},ProfileImageMask:'{3}',ProfileImageChance:{4},ThumbnailImageMask:'{5}',ProfileImageChance:{6})", Name, Type, Location, ProfileImageMask, ProfileImageChance, ThumbnailImageMask, ThumbnailImageChance);
 
-      name = Name;
-      type = Type;
-      location = Location;
-      extraData = null;
+      keys = Ed25519.GenerateKeys();
+      Profile = new ClientProfile();
+      Profile.Version = SemVer.V100;
+      Profile.PublicKey = keys.PublicKey;
+      Profile.Name = Name;
+      Profile.Type = Type;
+      Profile.Location = Location;
+      Profile.ExtraData = null;
 
-      bool hasImage = Helpers.Rng.NextDouble() < (double)ImageChance / 100;
-      if (hasImage)
+      bool hasProfileImage = Helpers.Rng.NextDouble() < (double)ProfileImageChance / 100;
+      if (hasProfileImage)
       {
-        imageFileName = GetImageFileByMask(ImageMask);
-        profileImage = imageFileName != null ? File.ReadAllBytes(imageFileName) : null;
+        Profile.ProfileImageFileName = GetImageFileByMask(ProfileImageMask);
+        Profile.SetProfileImage(Profile.ProfileImageFileName != null ? File.ReadAllBytes(Profile.ProfileImageFileName) : null);
       }
 
-      version = SemVer.V100;
-      keys = Ed25519.GenerateKeys();
+      bool hasThumbnailImage = Helpers.Rng.NextDouble() < (double)ThumbnailImageChance / 100;
+      if (hasThumbnailImage)
+      {
+        Profile.ThumbnailImageFileName = GetImageFileByMask(ThumbnailImageMask);
+        Profile.SetThumbnailImage(Profile.ThumbnailImageFileName != null ? File.ReadAllBytes(Profile.ThumbnailImageFileName) : null);
+      }
+
       identityId = Crypto.Sha256(keys.PublicKey);
       messageBuilder = new PsMessageBuilder(0, new List<SemVer>() { SemVer.V100 }, keys);
 
@@ -188,7 +172,7 @@ namespace NetworkSimulator
       {
         await ConnectAsync(Server.IpAddress, Server.ClientNonCustomerInterfacePort, true);
 
-        if (await EstablishProfileHostingAsync(type))
+        if (await EstablishProfileHostingAsync(Profile.Type))
         {
           hostingActive = true;
           CloseTcpClient();
@@ -197,21 +181,10 @@ namespace NetworkSimulator
           await ConnectAsync(Server.IpAddress, Server.ClientCustomerInterfacePort, true);
           if (await CheckInAsync())
           {
-            if (await InitializeProfileAsync(name, profileImage, location, null))
+            if (await InitializeProfileAsync(Profile.Name, Profile.ProfileImage, Profile.ThumbnailImage, Profile.Location, Profile.ExtraData))
             {
               profileInitialized = true;
-              if (profileImage != null)
-              {
-                if (await GetProfileThumbnailImage())
-                {
-                  res = true;
-                }
-                else log.Error("Unable to obtain identity's thumbnail image from profile server '{0}'.", Server.Name);
-              }
-              else
-              {
-                res = true;
-              }
+              res = true;
             }
             else log.Error("Unable to initialize profile on profile server '{0}'.", Server.Name);
           }
@@ -306,14 +279,16 @@ namespace NetworkSimulator
     {
       log.Trace("()");
 
+      this.Profile.Type = IdentityType;
       bool startConversationOk = await StartConversationAsync();
 
-      HostingPlanContract contract = null;
-      if (IdentityType != null)
+      HostingPlanContract contract = new HostingPlanContract()
       {
-        contract = new HostingPlanContract();
-        contract.IdentityType = IdentityType;
-      }
+        PlanId = ProtocolHelper.ByteArrayToByteString(new byte[0]),
+        IdentityPublicKey = ProtocolHelper.ByteArrayToByteString(Profile.PublicKey),
+        StartTime = ProtocolHelper.DateTimeToUnixTimestampMs(DateTime.Now),
+        IdentityType = IdentityType
+      };
 
       PsProtocolMessage requestMessage = messageBuilder.CreateRegisterHostingRequest(contract);
       await SendMessageAsync(requestMessage);
@@ -321,10 +296,44 @@ namespace NetworkSimulator
 
       bool idOk = responseMessage.Id == requestMessage.Id;
       bool statusOk = responseMessage.Response.Status == Status.Ok;
+      byte[] receivedContract = responseMessage.Response.ConversationResponse.RegisterHosting.Contract.ToByteArray();
+      bool contractOk = ByteArrayComparer.Equals(contract.ToByteArray(), receivedContract);
+      byte[] signature = responseMessage.Response.ConversationResponse.Signature.ToByteArray();
+      bool signatureOk = VerifyServerSignature(receivedContract, signature);
 
-      bool registerHostingOk = idOk && statusOk;
+      bool registerHostingOk = idOk && statusOk && contractOk && signatureOk;
 
       bool res = startConversationOk && registerHostingOk;
+
+      log.Trace("(-):{0}", res);
+      return res;
+    }
+
+
+    /// <summary>
+    /// Verifies server's signature of binary data.
+    /// </summary>
+    /// <param name="Data">Binary data that server signed.</param>
+    /// <param name="Signature">Signature of <paramref name="Data"/> to verify.</param>
+    /// <returns>true if the signature is valid, false otherwise.</returns>
+    public bool VerifyServerSignature(byte[] Data, byte[] Signature)
+    {
+      return VerifySignature(Data, Signature, profileServerKey);
+    }
+
+
+    /// <summary>
+    /// Verifies server's signature of binary data.
+    /// </summary>
+    /// <param name="Data">Binary data that server signed.</param>
+    /// <param name="Signature">Signature of <paramref name="Data"/> to verify.</param>
+    /// <param name="PublicKey">Public key of the entity that signed the data.</param>
+    /// <returns>true if the signature is valid, false otherwise.</returns>
+    public bool VerifySignature(byte[] Data, byte[] Signature, byte[] PublicKey)
+    {
+      log.Trace("()");
+
+      bool res = Ed25519.Verify(Signature, Data, PublicKey);
 
       log.Trace("(-):{0}", res);
       return res;
@@ -462,7 +471,7 @@ namespace NetworkSimulator
 
       byte[] receivedChallenge = StartConversationResponse.Response.ConversationResponse.Start.ClientChallenge.ToByteArray();
       byte[] profileServerPublicKey = StartConversationResponse.Response.ConversationResponse.Start.PublicKey.ToByteArray();
-      bool res = (StructuralComparisons.StructuralComparer.Compare(receivedChallenge, clientChallenge) == 0)
+      bool res = ByteArrayComparer.Equals(receivedChallenge, clientChallenge)
         && messageBuilder.VerifySignedConversationResponseBodyPart(StartConversationResponse, receivedChallenge, profileServerPublicKey);
 
       log.Trace("(-):{0}", res);
@@ -473,15 +482,21 @@ namespace NetworkSimulator
     /// Initializes a new identity profile on the profile server.
     /// </summary>
     /// <param name="Name">Name of the profile.</param>
-    /// <param name="Image">Optionally, a profile image data.</param>
+    /// <param name="ProfileImage">Optionally, profile image data.</param>
+    /// <param name="ThumbnailImage">Optionally, thumbnail image data.</param>
     /// <param name="Location">GPS location of the identity.</param>
     /// <param name="ExtraData">Optionally, identity's extra data.</param>
     /// <returns>true if the function succeeds, false otherwise.</returns>
-    public async Task<bool> InitializeProfileAsync(string Name, byte[] Image, GpsLocation Location, string ExtraData)
+    public async Task<bool> InitializeProfileAsync(string Name, byte[] ProfileImage, byte[] ThumbnailImage, GpsLocation Location, string ExtraData)
     {
       log.Trace("()");
 
-      PsProtocolMessage requestMessage = messageBuilder.CreateUpdateProfileRequest(SemVer.V100, Name, Image, Location, ExtraData);
+      this.Profile.Name = Name;
+      this.Profile.SetImages(ProfileImage, ThumbnailImage);
+      this.Profile.Location = Location;
+      this.Profile.ExtraData = ExtraData;
+      ProfileInformation profile = this.Profile.ToProfileInformation();
+      PsProtocolMessage requestMessage = messageBuilder.CreateUpdateProfileRequest(profile, this.Profile.ProfileImage, this.Profile.ThumbnailImage);
       await SendMessageAsync(requestMessage);
       PsProtocolMessage responseMessage = await ReceiveMessageAsync();
 
@@ -489,29 +504,6 @@ namespace NetworkSimulator
       bool statusOk = responseMessage.Response.Status == Status.Ok;
 
       bool res = idOk && statusOk;
-
-      log.Trace("(-):{0}", res);
-      return res;
-    }
-
-    /// <summary>
-    /// Obtains its own thumbnail picture from the profile server.
-    /// </summary>
-    /// <returns>true if the function succeeds, false otherwise.</returns>
-    public async Task<bool> GetProfileThumbnailImage()
-    {
-      log.Trace("()");
-
-      PsProtocolMessage requestMessage = messageBuilder.CreateGetIdentityInformationRequest(identityId, false, true, false);
-      await SendMessageAsync(requestMessage);
-      PsProtocolMessage responseMessage = await ReceiveMessageAsync();
-
-      bool idOk = responseMessage.Id == requestMessage.Id;
-      bool statusOk = responseMessage.Response.Status == Status.Ok;
-      thumbnailImage = responseMessage.Response.SingleResponse.GetIdentityInformation.ThumbnailImage.ToByteArray();
-      if (thumbnailImage.Length == 0) thumbnailImage = null;
-
-      bool res = idOk && statusOk && (thumbnailImage != null);
 
       log.Trace("(-):{0}", res);
       return res;
@@ -590,7 +582,7 @@ namespace NetworkSimulator
     public class SearchQueryInfo
     {
       /// <summary>Search results - list of found profiles.</summary>
-      public List<IdentityNetworkProfileInformation> Results;
+      public List<ProfileQueryInformation> Results;
 
       /// <summary>List of covered servers returned by the queried profile server.</summary>
       public List<byte[]> CoveredServers;
@@ -637,7 +629,7 @@ namespace NetworkSimulator
             foreach (ByteString coveredServerId in responseMessage.Response.ConversationResponse.ProfileSearch.CoveredServers)
               coveredServers.Add(coveredServerId.ToByteArray());
 
-            List<IdentityNetworkProfileInformation> results = responseMessage.Response.ConversationResponse.ProfileSearch.Profiles.ToList();
+            List<ProfileQueryInformation> results = responseMessage.Response.ConversationResponse.ProfileSearch.Profiles.ToList();
             while (results.Count < totalResultCount)
             {
               int remaining = Math.Min((int)maxResponseResults, totalResultCount - results.Count);
@@ -693,7 +685,7 @@ namespace NetworkSimulator
         bool useTypeFilter = !string.IsNullOrEmpty(TypeFilter) && (TypeFilter != "*") && (TypeFilter != "**");
         if (useTypeFilter)
         {
-          string value = type.ToLowerInvariant();
+          string value = Profile.Type.ToLowerInvariant();
           string filterValue = TypeFilter.ToLowerInvariant();
           matchType = value == filterValue;
 
@@ -723,7 +715,7 @@ namespace NetworkSimulator
         bool useNameFilter = !string.IsNullOrEmpty(NameFilter) && (NameFilter != "*") && (NameFilter != "**");
         if (useNameFilter)
         {
-          string value = name.ToLowerInvariant();
+          string value = Profile.Name.ToLowerInvariant();
           string filterValue = NameFilter.ToLowerInvariant();
           matchName = value == filterValue;
 
@@ -754,7 +746,7 @@ namespace NetworkSimulator
           bool matchLocation = false;
           if (LocationFilter != null)
           {
-            double distance = GpsLocation.DistanceBetween(LocationFilter, location);
+            double distance = GpsLocation.DistanceBetween(LocationFilter, Profile.Location);
             matchLocation = distance <= (double)Radius;
           }
           else matchLocation = true;
@@ -769,33 +761,28 @@ namespace NetworkSimulator
 
 
     /// <summary>
-    /// Returns network profile information about the client's identity.
+    /// Converts client's profile to ProfileQueryInformation structure.
     /// </summary>
-    /// <param name="IncludeThumbnailImage">If true, the returned profile information will include thumbnail image.</param>
-    /// <returns>network profile information about the client's identity.</returns>
-    public IdentityNetworkProfileInformation GetIdentityNetworkProfileInformation(bool IncludeThumbnailImage)
+    /// <param name="IsHosted">Value for ProfileQueryInformation.IsHosted field.</param>
+    /// <param name="IsOnline">Value for ProfileQueryInformation.IsOnline field.</param>
+    /// <param name="HostingProfileServerId">Value for ProfileQueryInformation.HostingServerNetworkId field.</param>
+    /// <param name="IncludeImages">If set to true, images are included in the query information.</param>
+    /// <returns>ProfileQueryInformation representing the client's profile.</returns>
+    public ProfileQueryInformation GetProfileQueryInformation(bool IsHosted, bool IsOnline, byte[] HostingProfileServerId, bool IncludeImages)
     {
-      log.Trace("(IncludeThumbnailImage:{0})", IncludeThumbnailImage);
-
-      IdentityNetworkProfileInformation res = new IdentityNetworkProfileInformation()
+      ProfileQueryInformation res = new ProfileQueryInformation()
       {
-        IdentityPublicKey = ProtocolHelper.ByteArrayToByteString(keys.PublicKey),
-        IsHosted = false,
-        IsOnline = false,
-        Latitude = location.GetLocationTypeLatitude(),
-        Longitude = location.GetLocationTypeLongitude(),
-        Name = name != null ? name : "",
-        Type = type != null ? type : "",
-        Version = version.ToByteString(),
-        ExtraData = extraData != null ? extraData : ""
+        IsHosted = IsHosted,
+        IsOnline = IsOnline,
+        SignedProfile = Profile.ToSignedProfileInformation(keys.ExpandedPrivateKey),
+        ThumbnailImage = ProtocolHelper.ByteArrayToByteString(IncludeImages && (Profile.ThumbnailImage != null) ? Profile.ThumbnailImage : new byte[0]),
+        HostingServerNetworkId = ProtocolHelper.ByteArrayToByteString(HostingProfileServerId != null ? HostingProfileServerId : new byte[0])
       };
 
-      if (IncludeThumbnailImage && (thumbnailImage != null)) res.ThumbnailImage = ProtocolHelper.ByteArrayToByteString(thumbnailImage);
-      else res.ThumbnailImage = ProtocolHelper.ByteArrayToByteString(new byte[0]);
-
-      log.Trace("(-)");
       return res;
     }
+
+
 
     /// <summary>
     /// Callback routine that validates server TLS certificate.
@@ -823,38 +810,24 @@ namespace NetworkSimulator
         Challenge = this.challenge.ToHex(),
         ClientChallenge = this.clientChallenge.ToHex(),
         ExpandedPrivateKeyHex = this.keys.ExpandedPrivateKeyHex,
-        ExtraData = this.extraData,
+        ExtraData = this.Profile.ExtraData,
         HostingActive = this.hostingActive,
         IdentityId = this.identityId.ToHex(),
-        ImageFileName = Path.GetFileName(imageFileName),
-        LocationLatitude = this.location.Latitude,
-        LocationLongitude = this.location.Longitude,
-        Name = this.name,
+        ProfileImageFileName = Path.GetFileName(this.Profile.ProfileImageFileName),
+        ThumbnailImageFileName = Path.GetFileName(this.Profile.ThumbnailImageFileName),
+        LocationLatitude = this.Profile.Location.Latitude,
+        LocationLongitude = this.Profile.Location.Longitude,
+        Name = this.Profile.Name,
         PrivateKeyHex = this.keys.PrivateKeyHex,
         ProfileInitialized = this.profileInitialized,
-        ProfileImageHash = null,
+        ProfileImageHash = this.Profile.ProfileImageHash.ToHex(),
+        ThumbnailImageHash = this.Profile.ThumbnailImageHash.ToHex(),
         ProfileServerKey = this.profileServerKey.ToHex(),
         ProfileServerName = this.profileServer.Name,
         PublicKeyHex = this.keys.PublicKeyHex,
-        ThumbnailImageHash = null,
-        Type = this.type,
-        Version = this.version
+        Type = this.Profile.Type,
+        Version = this.Profile.Version
       };
-
-
-      if (this.profileImage != null)
-      {
-        byte[] profileImageHash = Crypto.Sha256(profileImage);
-        string profileImageHashHex = profileImageHash.ToHex();
-        res.ProfileImageHash = profileImageHashHex;
-      }
-
-      if (this.thumbnailImage != null)
-      {
-        byte[] thumbnailImageHash = Crypto.Sha256(thumbnailImage);
-        string thumbnailImageHashHex = thumbnailImageHash.ToHex();
-        res.ThumbnailImageHash = thumbnailImageHashHex;
-      }
 
       return res;
     }
@@ -882,23 +855,29 @@ namespace NetworkSimulator
       res.keys.PublicKey = res.keys.PublicKeyHex.FromHex();
       res.keys.PrivateKey = res.keys.PrivateKeyHex.FromHex();
 
-      res.extraData = Snapshot.ExtraData;
+      res.Profile = new ClientProfile()
+      {
+        Version = Snapshot.Version,
+        Type = Snapshot.Type,
+        Name = Snapshot.Name,
+        ProfileImageFileName = Snapshot.ProfileImageFileName != null ? Path.Combine(CommandProcessor.ImagesDirectory, Snapshot.ProfileImageFileName) : null,
+        ThumbnailImageFileName = Snapshot.ThumbnailImageFileName != null ? Path.Combine(CommandProcessor.ImagesDirectory, Snapshot.ThumbnailImageFileName) : null,
+        Location = new GpsLocation(Snapshot.LocationLatitude, Snapshot.LocationLongitude),
+        ExtraData = Snapshot.ExtraData,
+        ProfileImageHash = Snapshot.ProfileImageHash.FromHex(),
+        ThumbnailImageHash = Snapshot.ThumbnailImageHash.FromHex(),
+        ProfileImage = Snapshot.ProfileImageHash != null ? Images[Snapshot.ProfileImageHash].FromHex() : null,
+        ThumbnailImage = Snapshot.ThumbnailImageHash != null ? Images[Snapshot.ThumbnailImageHash].FromHex() : null,
+        PublicKey = res.keys.PublicKey,
+      };
       res.hostingActive = Snapshot.HostingActive;
       res.identityId = Snapshot.IdentityId.FromHex();
-      res.imageFileName = Snapshot.ImageFileName != null ? Path.Combine(CommandProcessor.ImagesDirectory, Snapshot.ImageFileName) : null;
-      res.location = new GpsLocation(Snapshot.LocationLatitude, Snapshot.LocationLongitude);
-      res.name = Snapshot.Name;
       res.profileInitialized = Snapshot.ProfileInitialized;
 
-      res.profileImage = Snapshot.ProfileImageHash != null ? Images[Snapshot.ProfileImageHash].FromHex() : null;
-      res.thumbnailImage = Snapshot.ThumbnailImageHash != null ? Images[Snapshot.ThumbnailImageHash].FromHex() : null;
-
       res.profileServerKey = Snapshot.ProfileServerKey.FromHex();
-      res.type = Snapshot.Type;
-      res.version = Snapshot.Version;
 
       res.profileServer = ProfileServer;
-      res.log = new Logger("NetworkSimulator.IdentityClient", "[" + res.Name + "] ");
+      res.log = new Logger("NetworkSimulator.IdentityClient", "[" + res.Profile.Name + "] ");
       res.messageBuilder = new PsMessageBuilder(0, new List<SemVer>() { SemVer.V100 }, res.keys);
       res.InitializeTcpClient();
 

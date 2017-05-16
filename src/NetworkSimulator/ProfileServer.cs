@@ -486,7 +486,7 @@ namespace NetworkSimulator
     /// <param name="Client">Identity client that the profile server is going to host.</param>
     public void AddIdentityClient(IdentityClient Client)
     {
-      log.Trace("(Client.Name:'{0}')", Client.Name);
+      log.Trace("(Client.Profile.Name:'{0}')", Client.Profile.Name);
 
       hostedIdentities.Add(Client);
       availableIdentitySlots--;
@@ -800,18 +800,18 @@ namespace NetworkSimulator
     /// <param name="ExpectedCoveredServers">If the function succeeds, this is filled with list of covered servers that the search query should return.</param>
     /// <param name="LocalServerResultsCount">If the function succeeds, this is filled with the number of search results obtained from the local server.</param>
     /// <returns>List of profiles that match the given criteria or null if the function fails.</returns>
-    public List<IdentityNetworkProfileInformation> GetExpectedSearchResults(string NameFilter, string TypeFilter, GpsLocation LocationFilter, int Radius, bool IncludeHostedOnly, bool IncludeImages, out List<byte[]> ExpectedCoveredServers, out int LocalServerResultsCount)
+    public List<ProfileQueryInformation> GetExpectedSearchResults(string NameFilter, string TypeFilter, GpsLocation LocationFilter, int Radius, bool IncludeHostedOnly, bool IncludeImages, out List<byte[]> ExpectedCoveredServers, out int LocalServerResultsCount)
     {
       log.Trace("(NameFilter:'{0}',TypeFilter:'{1}',LocationFilter:'{2}',Radius:{3},IncludeHostedOnly:{4},IncludeImages:{5})", NameFilter, TypeFilter, LocationFilter, Radius, IncludeHostedOnly, IncludeImages);
 
-      List<IdentityNetworkProfileInformation> res = new List<IdentityNetworkProfileInformation>();
+      List<ProfileQueryInformation> res = new List<ProfileQueryInformation>();
       ExpectedCoveredServers = new List<byte[]>();
       ExpectedCoveredServers.Add(networkId);
 
-      List<IdentityNetworkProfileInformation> localResults = SearchQuery(NameFilter, TypeFilter, LocationFilter, Radius, IncludeImages);
+      List<ProfileQueryInformation> localResults = SearchQuery(NameFilter, TypeFilter, LocationFilter, Radius, IncludeImages);
       LocalServerResultsCount = localResults.Count;
 
-      foreach (IdentityNetworkProfileInformation localResult in localResults)
+      foreach (ProfileQueryInformation localResult in localResults)
       {
         localResult.IsHosted = true;
         localResult.IsOnline = false;
@@ -826,8 +826,8 @@ namespace NetworkSimulator
         {
           ByteString neighborId = ProtocolHelper.ByteArrayToByteString(neighbor.GetNetworkId());
           ExpectedCoveredServers.Add(neighborId.ToByteArray());
-          List<IdentityNetworkProfileInformation> neighborResults = neighbor.SearchQuery(NameFilter, TypeFilter, LocationFilter, Radius, IncludeImages);
-          foreach (IdentityNetworkProfileInformation neighborResult in neighborResults)
+          List<ProfileQueryInformation> neighborResults = neighbor.SearchQuery(NameFilter, TypeFilter, LocationFilter, Radius, IncludeImages);
+          foreach (ProfileQueryInformation neighborResult in neighborResults)
           {
             neighborResult.IsHosted = false;
             neighborResult.HostingServerNetworkId = neighborId;
@@ -851,17 +851,17 @@ namespace NetworkSimulator
     /// <param name="Radius">If <paramref name="LocationFilter"/> is not null, this is the radius of the target area.</param>
     /// <param name="IncludeImages">If set to true, the search results should include images.</param>
     /// <returns>List of hosted profiles that match the given criteria.</returns>
-    public List<IdentityNetworkProfileInformation> SearchQuery(string NameFilter, string TypeFilter, GpsLocation LocationFilter, int Radius, bool IncludeImages)
+    public List<ProfileQueryInformation> SearchQuery(string NameFilter, string TypeFilter, GpsLocation LocationFilter, int Radius, bool IncludeImages)
     {
       log.Trace("(NameFilter:'{0}',TypeFilter:'{1}',LocationFilter:'{2}',Radius:{3},IncludeImages:{4})", NameFilter, TypeFilter, LocationFilter, Radius, IncludeImages);
 
-      List<IdentityNetworkProfileInformation> res = new List<IdentityNetworkProfileInformation>();
+      List<ProfileQueryInformation> res = new List<ProfileQueryInformation>();
 
       foreach (IdentityClient client in hostedIdentities)
       {
         if (client.MatchesSearchQuery(NameFilter, TypeFilter, LocationFilter, Radius))
         {
-          IdentityNetworkProfileInformation info = client.GetIdentityNetworkProfileInformation(IncludeImages);
+          ProfileQueryInformation info = client.GetProfileQueryInformation(false, false, null, IncludeImages);
           res.Add(info);
         }
       }
@@ -884,7 +884,7 @@ namespace NetworkSimulator
         ClientAppServiceInterfacePort = this.clientAppServiceInterfacePort,
         ClientCustomerInterfacePort = this.clientCustomerInterfacePort,
         ClientNonCustomerInterfacePort = this.clientNonCustomerInterfacePort,
-        HostedIdentities = this.hostedIdentities.Select(i => i.Name).ToList(),
+        HostedIdentities = this.hostedIdentities.Select(i => i.Profile.Name).ToList(),
         IpAddress = this.ipAddress.ToString(),
         IsRunning = false,
         LocPort = this.locPort,

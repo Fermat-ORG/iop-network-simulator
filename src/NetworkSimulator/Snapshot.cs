@@ -101,10 +101,13 @@ namespace NetworkSimulator
     public decimal LocationLongitude;
 
     /// <summary>Profile image file name or null if the identity has no profile image.</summary>
-    public string ImageFileName;
+    public string ProfileImageFileName;
 
     /// <summary>SHA256 hash of profile image data or null if the identity has no profile image.</summary>
     public string ProfileImageHash;
+
+    /// <summary>Thumbnail image file name or null if the identity has no thumbnail image.</summary>
+    public string ThumbnailImageFileName;
 
     /// <summary>SHA256 hash of thumbnail image data or null if the identity has no thumbnail image.</summary>
     public string ThumbnailImageHash;
@@ -228,7 +231,7 @@ namespace NetworkSimulator
         {
           if (!this.Images.ContainsKey(identitySnapshot.ProfileImageHash))
           {
-            string imageDataHex = identity.ProfileImage.ToHex();
+            string imageDataHex = identity.Profile.ProfileImage.ToHex();
             this.Images.Add(identitySnapshot.ProfileImageHash, imageDataHex);
           }
         }
@@ -237,7 +240,7 @@ namespace NetworkSimulator
         {
           if (!this.Images.ContainsKey(identitySnapshot.ThumbnailImageHash))
           {
-            string imageDataHex = identity.ThumbnailImage.ToHex();
+            string imageDataHex = identity.Profile.ThumbnailImage.ToHex();
             this.Images.Add(identitySnapshot.ThumbnailImageHash, imageDataHex);
           }
         }

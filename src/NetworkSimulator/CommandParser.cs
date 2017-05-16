@@ -407,9 +407,9 @@ namespace NetworkSimulator
 
         case CommandType.Identity:
           {
-            if (paramCount != 11)
+            if (paramCount != 13)
             {
-              log.Error("Neighbor requires 11 parameters, but {0} parameters found on line {1}.", paramCount, LineNumber);
+              log.Error("Neighbor requires 13 parameters, but {0} parameters found on line {1}.", paramCount, LineNumber);
               break;
             }
 
@@ -421,8 +421,10 @@ namespace NetworkSimulator
               Latitude = decimal.Parse(Parts[p++], CultureInfo.InvariantCulture),
               Longitude = decimal.Parse(Parts[p++], CultureInfo.InvariantCulture),
               Radius = int.Parse(Parts[p++]),
-              ImageMask = Parts[p++],
-              ImageChance = int.Parse(Parts[p++]),
+              ProfileImageMask = Parts[p++],
+              ProfileImageChance = int.Parse(Parts[p++]),
+              ThumbnailImageMask = Parts[p++],
+              ThumbnailImageChance = int.Parse(Parts[p++]),
               PsGroup = Parts[p++],
               PsIndex = int.Parse(Parts[p++]),
               PsCount = int.Parse(Parts[p++])
@@ -457,10 +459,17 @@ namespace NetworkSimulator
               break;
             }
 
-            bool imageChance = (0 <= command.ImageChance) && (command.ImageChance <= 100);
-            if (!imageChance)
+            bool profileImageChance = (0 <= command.ProfileImageChance) && (command.ProfileImageChance <= 100);
+            if (!profileImageChance)
             {
-              log.Error("ImageChance '{0}' on line {1} is invalid. It must be an integer between 0 and 100.", command.ImageChance, LineNumber);
+              log.Error("ProfileImageChance '{0}' on line {1} is invalid. It must be an integer between 0 and 100.", command.ProfileImageChance, LineNumber);
+              break;
+            }
+
+            bool thumbnailImageChance = (0 <= command.ThumbnailImageChance) && (command.ThumbnailImageChance <= 100);
+            if (!thumbnailImageChance)
+            {
+              log.Error("ThumbnailImageChance '{0}' on line {1} is invalid. It must be an integer between 0 and 100.", command.ThumbnailImageChance, LineNumber);
               break;
             }
 

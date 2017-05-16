@@ -231,7 +231,7 @@ namespace NetworkSimulator
                 IdentityClient identityClient = null;
                 try
                 {
-                  identityClient = new IdentityClient(name, cmd.IdentityType, location, cmd.ImageMask, cmd.ImageChance);
+                  identityClient = new IdentityClient(name, cmd.IdentityType, location, cmd.ProfileImageMask, cmd.ProfileImageChance, cmd.ThumbnailImageMask, cmd.ThumbnailImageChance);
                   identityClients.Add(name, identityClient);
                 }
                 catch
@@ -289,7 +289,7 @@ namespace NetworkSimulator
                 Task<bool> cancelTask = client.CancelProfileHosting();
                 if (!cancelTask.Result)
                 {
-                  log.Error("Unable to cancel profile hosting agreement of identity '{0}' on server '{1}'.", client.Name, client.ProfileServer.Name);
+                  log.Error("Unable to cancel profile hosting agreement of identity '{0}' on server '{1}'.", client.Profile.Name, client.ProfileServer.Name);
                   error = true;
                 }
 
@@ -518,7 +518,7 @@ namespace NetworkSimulator
               IdentityClient client = null;
               try
               {
-                client = new IdentityClient("Query Client", "Query Client", new GpsLocation(0, 0), null, 0);
+                client = new IdentityClient("Query Client", "Query Client", new GpsLocation(0, 0), null, 0, null, 0);
 
                 int maxResults = cmd.IncludeImages ? 1000 : 10000;
                 string nameFilter = cmd.NameFilter != "**" ? cmd.NameFilter : null;
@@ -540,8 +540,8 @@ namespace NetworkSimulator
                   {
                     List<byte[]> expectedCoveredServers;
                     int localServerResults;
-                    List<IdentityNetworkProfileInformation> expectedSearchResults = targetServer.GetExpectedSearchResults(nameFilter, typeFilter, queryLocation, cmd.Radius, false, cmd.IncludeImages, out expectedCoveredServers, out localServerResults);
-                    List<IdentityNetworkProfileInformation> realResults = searchResults.Results;
+                    List<ProfileQueryInformation> expectedSearchResults = targetServer.GetExpectedSearchResults(nameFilter, typeFilter, queryLocation, cmd.Radius, false, cmd.IncludeImages, out expectedCoveredServers, out localServerResults);
+                    List<ProfileQueryInformation> realResults = searchResults.Results;
                     List<byte[]> realCoveredServers = searchResults.CoveredServers;
 
                     if (DebugModeEnabled)
@@ -668,7 +668,7 @@ namespace NetworkSimulator
                   ProfileServer profileServer = profileServers[identitySnapshot.ProfileServerName];
                   IdentityClient identityClient = IdentityClient.CreateFromSnapshot(identitySnapshot, snapshot.Images, profileServer);
                   profileServer.AddIdentityClientSnapshot(identityClient);
-                  identityClients.Add(identityClient.Name, identityClient);
+                  identityClients.Add(identityClient.Profile.Name, identityClient);
                 }
 
                 // Initialize neighbor relations.
@@ -876,7 +876,7 @@ namespace NetworkSimulator
     /// the result sets must be exactly the same, otherwise <paramref name="ExpectedSearchResults"/> must be a superset of <paramref name="RealSeachResults"/>
     /// and the number of real results must be equal to this value..</param>
     /// <returns>true if real results match expected results, false otherwise.</returns>
-    public bool CompareSearchResults(List<IdentityNetworkProfileInformation> RealSearchResults, List<IdentityNetworkProfileInformation> ExpectedSearchResults, int MaxTotalResults)
+    public bool CompareSearchResults(List<ProfileQueryInformation> RealSearchResults, List<ProfileQueryInformation> ExpectedSearchResults, int MaxTotalResults)
     {
       log.Trace("(RealSearchResults.Count:{0},ExpectedSearchResults.Count:{1},MaxTotalResults:{2})", RealSearchResults.Count, ExpectedSearchResults.Count, MaxTotalResults);
 
@@ -898,13 +898,13 @@ namespace NetworkSimulator
       if (res)
       {
         HashSet<byte[]> expectedSearchBins = new HashSet<byte[]>(StructuralEqualityComparer<byte[]>.Default);
-        foreach (IdentityNetworkProfileInformation info in ExpectedSearchResults)
+        foreach (ProfileQueryInformation info in ExpectedSearchResults)
         {
           byte[] infoBinary = info.ToByteArray();
           expectedSearchBins.Add(infoBinary);
         }
 
-        foreach (IdentityNetworkProfileInformation info in RealSearchResults)
+        foreach (ProfileQueryInformation info in RealSearchResults)
         {
           byte[] infoBinary = info.ToByteArray();
           if (expectedSearchBins.Contains(infoBinary))
@@ -946,7 +946,7 @@ namespace NetworkSimulator
           // In this case all results may come solely from the target server.
           if (RealCoveredServers.Count == 1)
           {
-            bool match = StructuralEqualityComparer<byte[]>.Default.Equals(RealCoveredServers[0], TargetServerId);
+            bool match = ByteArrayComparer.Equals(RealCoveredServers[0], TargetServerId);
             if (match)
             {
               res = true;
@@ -976,7 +976,7 @@ namespace NetworkSimulator
             if (expectedServersIndexes.Contains(j)) continue;
 
             byte[] expectedServer = ExpectedCoveredServers[j];
-            bool itemMatch = StructuralEqualityComparer<byte[]>.Default.Equals(realServer, expectedServer);
+            bool itemMatch = ByteArrayComparer.Equals(realServer, expectedServer);
 
             if (itemMatch)
             {

@@ -624,12 +624,12 @@ namespace NetworkSimulator
           bool searchRequestOk = idOk && statusOk;
           if (searchRequestOk)
           {
-            int totalResultCount = (int)responseMessage.Response.ConversationResponse.ProfileSearch.TotalRecordCount;
+            int totalResultCount = (int)responseMessage.Response.SingleResponse.ProfileSearch.TotalRecordCount;
             List<byte[]> coveredServers = new List<byte[]>();
-            foreach (ByteString coveredServerId in responseMessage.Response.ConversationResponse.ProfileSearch.CoveredServers)
+            foreach (ByteString coveredServerId in responseMessage.Response.SingleResponse.ProfileSearch.CoveredServers)
               coveredServers.Add(coveredServerId.ToByteArray());
 
-            List<ProfileQueryInformation> results = responseMessage.Response.ConversationResponse.ProfileSearch.Profiles.ToList();
+            List<ProfileQueryInformation> results = responseMessage.Response.SingleResponse.ProfileSearch.Profiles.ToList();
             while (results.Count < totalResultCount)
             {
               int remaining = Math.Min((int)maxResponseResults, totalResultCount - results.Count);
@@ -643,7 +643,7 @@ namespace NetworkSimulator
               searchRequestOk = idOk && statusOk;
               if (!searchRequestOk) break;
 
-              results.AddRange(responseMessage.Response.ConversationResponse.ProfileSearchPart.Profiles.ToList());
+              results.AddRange(responseMessage.Response.SingleResponse.ProfileSearchPart.Profiles.ToList());
             }
 
             res = new SearchQueryInfo();

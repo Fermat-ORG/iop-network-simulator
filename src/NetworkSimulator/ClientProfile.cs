@@ -52,6 +52,48 @@ namespace NetworkSimulator
 
 
     /// <summary>
+    /// Copies values from the another profile instance.
+    /// </summary>
+    /// <param name="Profile">Profile to copy values from.</param>
+    public void CopyFrom(ClientProfile Profile)
+    {
+      this.Version = Profile.Version;
+      this.PublicKey = Profile.PublicKey;
+      this.Name = Profile.Name;
+      this.Type = Profile.Type;
+
+      if (Profile.ProfileImage != null)
+      {
+        this.ProfileImage = new byte[Profile.ProfileImage.Length];
+        Array.Copy(Profile.ProfileImage, this.ProfileImage, this.ProfileImage.Length);
+      }
+
+      this.ProfileImageFileName = Profile.ProfileImageFileName;
+
+      if (Profile.ThumbnailImage != null)
+      {
+        this.ThumbnailImage = new byte[Profile.ThumbnailImage.Length];
+        Array.Copy(Profile.ThumbnailImage, this.ThumbnailImage, this.ThumbnailImage.Length);
+      }
+
+      this.ThumbnailImageFileName = Profile.ThumbnailImageFileName;
+      this.Location = new GpsLocation(Profile.Location.Latitude, Profile.Location.Longitude);
+      this.ExtraData = Profile.ExtraData;
+
+      if (Profile.ProfileImageHash != null)
+      {
+        this.ProfileImageHash = new byte[Profile.ProfileImageHash.Length];
+        Array.Copy(Profile.ProfileImageHash, this.ProfileImageHash, this.ProfileImageHash.Length);
+      }
+
+      if (Profile.ThumbnailImageHash != null)
+      {
+        this.ThumbnailImageHash = new byte[Profile.ThumbnailImageHash.Length];
+        Array.Copy(Profile.ThumbnailImageHash, this.ThumbnailImageHash, this.ThumbnailImageHash.Length);
+      }
+    }
+
+    /// <summary>
     /// Copies values from the profile information description to properties of this instance.
     /// </summary>
     /// <param name="Profile">Profile information description.</param>
@@ -63,8 +105,13 @@ namespace NetworkSimulator
       this.PublicKey = Profile.PublicKey.ToByteArray();
       this.Name = Profile.Name;
       this.Type = Profile.Type;
-      this.ProfileImage = ProfileImage;
-      this.ThumbnailImage = ThumbnailImage;
+
+      this.ProfileImage = new byte[ProfileImage.Length];
+      Array.Copy(ProfileImage, this.ProfileImage, this.ProfileImage.Length);
+
+      this.ThumbnailImage = new byte[ThumbnailImage.Length];
+      Array.Copy(ThumbnailImage, this.ThumbnailImage, this.ThumbnailImage.Length);
+
       this.Location = new GpsLocation(Profile.Latitude, Profile.Longitude);
       this.ExtraData = Profile.ExtraData;
       this.ProfileImageHash = Profile.ProfileImageHash.ToByteArray();

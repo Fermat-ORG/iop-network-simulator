@@ -1,5 +1,6 @@
 ﻿using Google.Protobuf;
 using Iop.Profileserver;
+using Iop.Proximityserver;
 using IopCommon;
 using IopProtocol;
 using System;
@@ -33,6 +34,9 @@ namespace NetworkSimulator
     /// <summary>Full path to the directory that contains original profile server files within binary directory.</summary>
     public static string ProfileServerBinariesDirectory = Path.Combine(BinariesDirectory, "ProfileServer");
 
+    /// <summary>Full path to the directory that contains original proximity server files within binary directory.</summary>
+    public static string ProximityServerBinariesDirectory = Path.Combine(BinariesDirectory, "ProximityServer");
+
     /// <summary>Full path to the directory that contains snapshots.</summary>
     public static string SnapshotDirectory = Path.Combine(BaseDirectory, "snapshots");
 
@@ -42,8 +46,20 @@ namespace NetworkSimulator
     /// <summary>List of profile server instances mapped by their name.</summary>
     private Dictionary<string, ProfileServer> profileServers = new Dictionary<string, ProfileServer>(StringComparer.Ordinal);
 
+    /// <summary>List of proximity server instances mapped by their name.</summary>
+    private Dictionary<string, ProximityServer> proximityServers = new Dictionary<string, ProximityServer>(StringComparer.Ordinal);
+
+    /// <summary>List of all server instances mapped by their name.</summary>
+    private Dictionary<string, ServerBase> servers = new Dictionary<string, ServerBase>(StringComparer.Ordinal);
+
     /// <summary>List of identity client instances mapped by their name.</summary>
     private Dictionary<string, IdentityClient> identityClients = new Dictionary<string, IdentityClient>(StringComparer.Ordinal);
+
+    /// <summary>List of activities mapped by their name.</summary>
+    private Dictionary<string, Activity> activities = new Dictionary<string, Activity>(StringComparer.Ordinal);
+
+    /// <summary>List of activity groups mapped by group name.</summary>
+    private Dictionary<string, List<Activity>> activityGroups = new Dictionary<string, List<Activity>>();
 
     /// <summary>True if debug mode is currently enabled, false otherwise.</summary>
     private bool DebugModeEnabled;
@@ -72,7 +88,7 @@ namespace NetworkSimulator
       foreach (IdentityClient identity in identityClients.Values)
         identity.Shutdown();
 
-      foreach (ProfileServer server in profileServers.Values)
+      foreach (ServerBase server in servers.Values)
         server.Shutdown();
 
       log.Trace("(-)");
@@ -111,13 +127,14 @@ namespace NetworkSimulator
               CommandProfileServer cmd = (CommandProfileServer)command;
               for (int i = 1; i <= cmd.Count; i++)
               {
-                string name = GetInstanceName(cmd.GroupName, i);
+                string name = GetServerInstanceName(cmd.GroupName, i);
                 GpsLocation location = Helpers.GenerateRandomGpsLocation(cmd.Latitude, cmd.Longitude, cmd.Radius);
                 int basePort = cmd.BasePort + 20 * (i - 1);
                 ProfileServer profileServer = new ProfileServer(name, location, basePort);
                 if (profileServer.Initialize())
                 {
                   profileServers.Add(name, profileServer);
+                  servers.Add(name, profileServer);
                 }
                 else
                 {
@@ -131,16 +148,42 @@ namespace NetworkSimulator
               break;
             }
 
+          case CommandType.ProximityServer:
+            {
+              CommandProximityServer cmd = (CommandProximityServer)command;
+              for (int i = 1; i <= cmd.Count; i++)
+              {
+                string name = GetServerInstanceName(cmd.GroupName, i);
+                GpsLocation location = Helpers.GenerateRandomGpsLocation(cmd.Latitude, cmd.Longitude, cmd.Radius);
+                int basePort = cmd.BasePort + 20 * (i - 1);
+                ProximityServer proximityServer = new ProximityServer(name, location, basePort);
+                if (proximityServer.Initialize())
+                {
+                  proximityServers.Add(name, proximityServer);
+                  servers.Add(name, proximityServer);
+                }
+                else
+                {
+                  log.Error("  * Initialization of proximity server '{0}' failed.", proximityServer.Name);
+                  error = true;
+                  break;
+                }
+              }
+
+              if (!error) log.Info("  * {0} proximity servers created.", cmd.Count);
+              break;
+            }
+
           case CommandType.StartServer:
             {
               CommandStartServer cmd = (CommandStartServer)command;
-              for (int i = 0; i < cmd.PsCount; i++)
+              for (int i = 0; i < cmd.Count; i++)
               {
-                string name = GetInstanceName(cmd.PsGroup, cmd.PsIndex + i);
-                ProfileServer profileServer;
-                if (profileServers.TryGetValue(name, out profileServer))
+                string name = GetServerInstanceName(cmd.Group, cmd.Index + i);
+                ServerBase server;
+                if (servers.TryGetValue(name, out server))
                 {
-                  if (!profileServer.Start())
+                  if (!server.Start())
                   {
                     log.Error("  * Unable to start server instance '{0}'.", name);
                     error = true;
@@ -149,26 +192,26 @@ namespace NetworkSimulator
                 }
                 else
                 {
-                  log.Error("  * Profile server instance '{0}' does not exist.", name);
+                  log.Error("  * Server instance '{0}' does not exist.", name);
                   error = true;
                   break;
                 }
               }
 
-              if (!error) log.Info("  * {0} profile servers started.", cmd.PsCount);
+              if (!error) log.Info("  * {0} servers started.", cmd.Count);
               break;
             }
 
           case CommandType.StopServer:
             {
               CommandStopServer cmd = (CommandStopServer)command;
-              for (int i = 0; i < cmd.PsCount; i++)
+              for (int i = 0; i < cmd.Count; i++)
               {
-                string name = GetInstanceName(cmd.PsGroup, cmd.PsIndex + i);
-                ProfileServer profileServer;
-                if (profileServers.TryGetValue(name, out profileServer))
+                string name = GetServerInstanceName(cmd.Group, cmd.Index + i);
+                ServerBase server;
+                if (servers.TryGetValue(name, out server))
                 {
-                  if (!profileServer.Stop())
+                  if (!server.Stop())
                   {
                     log.Error("  * Unable to stop server instance '{0}'.", name);
                     error = true;
@@ -176,13 +219,13 @@ namespace NetworkSimulator
                 }
                 else
                 {
-                  log.Error("  * Profile server instance '{0}' does not exist.", name);
+                  log.Error("  * Server instance '{0}' does not exist.", name);
                   error = true;
                   break;
                 }
               }
 
-              if (!error) log.Info("  * {0} profile servers stopped.", cmd.PsCount);
+              if (!error) log.Info("  * {0} servers stopped.", cmd.Count);
               break;
             }
 
@@ -192,9 +235,9 @@ namespace NetworkSimulator
 
               List<ProfileServer> availableServers = new List<ProfileServer>();
               int availableSlots = 0;
-              for (int i = 0; i < cmd.PsCount; i++)
+              for (int i = 0; i < cmd.Count; i++)
               {
-                string name = GetInstanceName(cmd.PsGroup, cmd.PsIndex + i);
+                string name = GetServerInstanceName(cmd.Group, cmd.Index + i);
                 ProfileServer profileServer;
                 if (profileServers.TryGetValue(name, out profileServer))
                 {
@@ -212,15 +255,15 @@ namespace NetworkSimulator
               if (error) break;
 
 
-              if (availableSlots < cmd.Count)
+              if (availableSlots < cmd.CreateCount)
               {
-                log.Error("  * Total number of available identity slots in selected servers is {0}, but {1} slots are required.", availableSlots, cmd.Count);
+                log.Error("  * Total number of available identity slots in selected servers is {0}, but {1} slots are required.", availableSlots, cmd.CreateCount);
                 error = true;
                 break;
               }
 
 
-              for (int i = 1; i <= cmd.Count; i++)
+              for (int i = 1; i <= cmd.CreateCount; i++)
               {
                 string name = GetIdentityName(cmd.Name, i);
 
@@ -241,7 +284,7 @@ namespace NetworkSimulator
                   break;
                 }
 
-                Task<bool> initTask = identityClient.InitializeProfileHosting(profileServer);
+                Task<bool> initTask = identityClient.InitializeProfileHostingAsync(profileServer);
                 if (initTask.Result) 
                 {
                   profileServer.AddIdentityClient(identityClient);
@@ -256,7 +299,7 @@ namespace NetworkSimulator
                 }
               }
 
-              if (!error) log.Info("  * {0} identities created and initialized on {1} servers.", cmd.Count, cmd.PsCount);
+              if (!error) log.Info("  * {0} identities created and initialized on {1} servers.", cmd.CreateCount, cmd.Count);
               break;
             }
 
@@ -286,13 +329,13 @@ namespace NetworkSimulator
 
               foreach (IdentityClient client in clients)
               {
-                Task<bool> cancelTask = client.CancelProfileHosting();
+                Task<bool> cancelTask = client.CancelProfileHostingAsync();
                 if (!cancelTask.Result)
                 {
                   log.Error("Unable to cancel profile hosting agreement of identity '{0}' on server '{1}'.", client.Profile.Name, client.ProfileServer.Name);
                   error = true;
+                  break;
                 }
-
               }
 
               if (!error) log.Info("  * {0} identities cancelled their hosting agreement.", clients.Count);
@@ -304,24 +347,24 @@ namespace NetworkSimulator
             {
               CommandNeighborhood cmd = (CommandNeighborhood)command;
 
-              List<ProfileServer> neighborhoodList = new List<ProfileServer>();
-              for (int i = 0; i < cmd.PsGroups.Count; i++)
+              List<ServerBase> neighborhoodList = new List<ServerBase>();
+              for (int i = 0; i < cmd.Groups.Count; i++)
               {
-                string psGroup = cmd.PsGroups[i];
-                int psCount = cmd.PsCounts[i];
-                int psIndex = cmd.PsIndexes[i];
+                string psGroup = cmd.Groups[i];
+                int psCount = cmd.Counts[i];
+                int psIndex = cmd.Indexes[i];
                 for (int j = 0; j < psCount; j++)
                 {
-                  string name = GetInstanceName(psGroup, psIndex + j);
+                  string name = GetServerInstanceName(psGroup, psIndex + j);
 
-                  ProfileServer profileServer;
-                  if (profileServers.TryGetValue(name, out profileServer))
+                  ServerBase server;
+                  if (servers.TryGetValue(name, out server))
                   {
-                    neighborhoodList.Add(profileServer);
+                    neighborhoodList.Add(server);
                   }
                   else
                   {
-                    log.Error("  * Profile server instance '{0}' does not exist.", name);
+                    log.Error("  * Server instance '{0}' does not exist.", name);
                     error = true;
                     break;
                   }
@@ -330,18 +373,18 @@ namespace NetworkSimulator
 
               if (!error)
               {
-                foreach (ProfileServer ps in neighborhoodList)
+                foreach (ServerBase neighbor in neighborhoodList)
                 {
-                  if (!ps.LocServer.AddNeighborhood(neighborhoodList))
+                  if (!neighbor.LocServer.AddNeighborhood(neighborhoodList))
                   {
-                    log.Error("  * Unable to add neighbors to server '{0}'.", ps.Name);
+                    log.Error("  * Unable to add neighbors to server '{0}'.", neighbor.Name);
                     error = true;
                     break;
                   }
                 }
 
                 if (!error)
-                  log.Info("  * Neighborhood of {0} profile servers has been established.", neighborhoodList.Count);
+                  log.Info("  * Neighborhood of {0} servers has been established.", neighborhoodList.Count);
               }
               break;
             }
@@ -350,24 +393,24 @@ namespace NetworkSimulator
             {
               CommandCancelNeighborhood cmd = (CommandCancelNeighborhood)command;
 
-              List<ProfileServer> neighborhoodList = new List<ProfileServer>();
-              for (int i = 0; i < cmd.PsGroups.Count; i++)
+              List<ServerBase> neighborhoodList = new List<ServerBase>();
+              for (int i = 0; i < cmd.Groups.Count; i++)
               {
-                string psGroup = cmd.PsGroups[i];
-                int psCount = cmd.PsCounts[i];
-                int psIndex = cmd.PsIndexes[i];
+                string psGroup = cmd.Groups[i];
+                int psCount = cmd.Counts[i];
+                int psIndex = cmd.Indexes[i];
                 for (int j = 0; j < psCount; j++)
                 {
-                  string name = GetInstanceName(psGroup, psIndex + j);
+                  string name = GetServerInstanceName(psGroup, psIndex + j);
 
-                  ProfileServer profileServer;
-                  if (profileServers.TryGetValue(name, out profileServer))
+                  ServerBase server;
+                  if (servers.TryGetValue(name, out server))
                   {
-                    neighborhoodList.Add(profileServer);
+                    neighborhoodList.Add(server);
                   }
                   else
                   {
-                    log.Error("  * Profile server instance '{0}' does not exist.", name);
+                    log.Error("  * Server instance '{0}' does not exist.", name);
                     error = true;
                     break;
                   }
@@ -376,11 +419,11 @@ namespace NetworkSimulator
 
               if (!error)
               {
-                foreach (ProfileServer ps in neighborhoodList)
+                foreach (ServerBase neighbor in neighborhoodList)
                 {
-                  if (!ps.LocServer.CancelNeighborhood(neighborhoodList))
+                  if (!neighbor.LocServer.CancelNeighborhood(neighborhoodList))
                   {
-                    log.Error("  * Unable to add neighbors to server '{0}'.", ps.Name);
+                    log.Error("  * Unable to add neighbors to server '{0}'.", neighbor.Name);
                     error = true;
                     break;
                   }
@@ -396,21 +439,21 @@ namespace NetworkSimulator
             {
               CommandNeighbor cmd = (CommandNeighbor)command;
 
-              ProfileServer profileServer;
-              if (profileServers.TryGetValue(cmd.Source, out profileServer))
+              ServerBase server;
+              if (servers.TryGetValue(cmd.Source, out server))
               {
-                List<ProfileServer> neighborhoodList = new List<ProfileServer>();
+                List<ServerBase> neighborhoodList = new List<ServerBase>();
                 for (int i = 0; i < cmd.Targets.Count; i++)
                 {
                   string name = cmd.Targets[i];
-                  ProfileServer target;
-                  if (profileServers.TryGetValue(name, out target))
+                  ServerBase target;
+                  if (servers.TryGetValue(name, out target))
                   {
                     neighborhoodList.Add(target);
                   }
                   else
                   {
-                    log.Error("  * Profile server instance '{0}' does not exist.", name);
+                    log.Error("  * Server instance '{0}' does not exist.", name);
                     error = true;
                     break;
                   }
@@ -419,13 +462,13 @@ namespace NetworkSimulator
 
                 if (!error)
                 {
-                  if (profileServer.LocServer.AddNeighborhood(neighborhoodList))
+                  if (server.LocServer.AddNeighborhood(neighborhoodList))
                   {
-                    log.Info("  * {0} servers have been added to the neighborhood of server '{1}'.", neighborhoodList.Count, profileServer.Name);
+                    log.Info("  * {0} servers have been added to the neighborhood of server '{1}'.", neighborhoodList.Count, server.Name);
                   }
                   else
                   {
-                    log.Error("  * Unable to add neighbors to server '{0}'.", profileServer.Name);
+                    log.Error("  * Unable to add neighbors to server '{0}'.", server.Name);
                     error = true;
                     break;
                   }
@@ -433,7 +476,7 @@ namespace NetworkSimulator
               }
               else
               {
-                log.Error("  * Profile server instance '{0}' does not exist.", cmd.Source);
+                log.Error("  * Server instance '{0}' does not exist.", cmd.Source);
                 error = true;
                 break;
               }
@@ -445,21 +488,21 @@ namespace NetworkSimulator
             {
               CommandCancelNeighbor cmd = (CommandCancelNeighbor)command;
 
-              ProfileServer profileServer;
-              if (profileServers.TryGetValue(cmd.Source, out profileServer))
+              ServerBase server;
+              if (servers.TryGetValue(cmd.Source, out server))
               {
-                List<ProfileServer> neighborhoodList = new List<ProfileServer>();
+                List<ServerBase> neighborhoodList = new List<ServerBase>();
                 for (int i = 0; i < cmd.Targets.Count; i++)
                 {
                   string name = cmd.Targets[i];
-                  ProfileServer target;
-                  if (profileServers.TryGetValue(name, out target))
+                  ServerBase target;
+                  if (servers.TryGetValue(name, out target))
                   {
                     neighborhoodList.Add(target);
                   }
                   else
                   {
-                    log.Error("  * Profile server instance '{0}' does not exist.", name);
+                    log.Error("  * Server instance '{0}' does not exist.", name);
                     error = true;
                     break;
                   }
@@ -468,13 +511,13 @@ namespace NetworkSimulator
 
                 if (!error)
                 {
-                  if (profileServer.LocServer.CancelNeighborhood(neighborhoodList))
+                  if (server.LocServer.CancelNeighborhood(neighborhoodList))
                   {
-                    log.Info("  * {0} servers have been removed from the neighborhood of server '{1}'.", neighborhoodList.Count, profileServer.Name);
+                    log.Info("  * {0} servers have been removed from the neighborhood of server '{1}'.", neighborhoodList.Count, server.Name);
                   }
                   else
                   {
-                    log.Error("  * Unable to remove neighbors from neighborhood of server '{0}'.", profileServer.Name);
+                    log.Error("  * Unable to remove neighbors from neighborhood of server '{0}'.", server.Name);
                     error = true;
                     break;
                   }
@@ -482,7 +525,7 @@ namespace NetworkSimulator
               }
               else
               {
-                log.Error("  * Profile server instance '{0}' does not exist.", cmd.Source);
+                log.Error("  * Server instance '{0}' does not exist.", cmd.Source);
                 error = true;
                 break;
               }
@@ -491,14 +534,208 @@ namespace NetworkSimulator
             }
 
 
+
+          case CommandType.Activity:
+            {
+              CommandActivity cmd = (CommandActivity)command;
+
+              List<IdentityClient> availableIdentityClients = new List<IdentityClient>();
+              for (int i = 0; i < cmd.Count; i++)
+              {
+                string name = GetIdentityName(cmd.Group, cmd.Index + i);
+                IdentityClient identityClient;
+                if (identityClients.TryGetValue(name, out identityClient))
+                {
+                  availableIdentityClients.Add(identityClient);
+                }
+                else
+                {
+                  log.Error("  * Identity name '{0}' does not exist.", name);
+                  error = true;
+                  break;
+                }
+              }
+
+              if (error) break;
+
+              List<Activity> activityGroup = new List<Activity>();
+              activityGroups.Add(cmd.Name, activityGroup);
+              Dictionary<IdentityClient, Dictionary<ProximityServer, List<Activity>>> clientServerActivityMapping = new Dictionary<IdentityClient, Dictionary<ProximityServer, List<Activity>>>();
+              for (int i = 0; i < cmd.CreateCount; i++)
+              {
+                uint activityId = (uint)activities.Count + 1;
+                string name = GetActivityName(cmd.Name, activityId);
+
+                int identityClientIndex = Helpers.Rng.Next(availableIdentityClients.Count);
+                IdentityClient identityClient = availableIdentityClients[identityClientIndex];
+
+                GpsLocation location = Helpers.GenerateRandomGpsLocation(cmd.Latitude, cmd.Longitude, cmd.Radius);
+
+
+                int startTimeShift = Helpers.Rng.Next(cmd.StartTimeFrom, cmd.StartTimeTo);
+                DateTime startTime = DateTime.UtcNow.AddSeconds(startTimeShift);
+
+                int lifetimeShift = Helpers.Rng.Next(cmd.LifetimeFrom, cmd.LifetimeTo);
+                DateTime expirationTime = startTime.AddSeconds(lifetimeShift);
+
+                uint precision = (uint)Helpers.Rng.Next(cmd.PrecisionMin, cmd.PrecisionMax + 1);
+
+                ProximityServer proximityServer = FindNearestProximityServer(location);
+                if (proximityServer != null)
+                {
+                  Activity activity = null;
+                  try
+                  {
+                    activity = new Activity(activityId, cmd.Name, location, precision, startTime, expirationTime, null, identityClient);
+                    activities.Add(name, activity);
+                    activityGroup.Add(activity);
+
+                    Dictionary<ProximityServer, List<Activity>> serverActivityMapping = null;
+                    if (!clientServerActivityMapping.TryGetValue(identityClient, out serverActivityMapping))
+                    {
+                      serverActivityMapping = new Dictionary<ProximityServer, List<Activity>>();
+                      clientServerActivityMapping.Add(identityClient, serverActivityMapping);
+                    }
+
+                    List<Activity> serverActivities = null;
+                    if (!serverActivityMapping.TryGetValue(proximityServer, out serverActivities))
+                    {
+                      serverActivities = new List<Activity>();
+                      serverActivityMapping.Add(proximityServer, serverActivities);
+                    }
+
+                    serverActivities.Add(activity);
+                  }
+                  catch
+                  {
+                    log.Error("Unable to create activity '{0}'.", name);
+                    error = true;
+                    break;
+                  }
+                }
+                else
+                {
+                  log.Error("No proximity server found for activity '{0}'.", name);
+                  error = true;
+                  break;
+                }
+              }
+
+
+              foreach (KeyValuePair<IdentityClient, Dictionary<ProximityServer, List<Activity>>> kvpIdentity in clientServerActivityMapping)
+              {
+                IdentityClient identityClient = kvpIdentity.Key;
+
+                foreach (KeyValuePair<ProximityServer, List<Activity>> kvpServer in kvpIdentity.Value)
+                {
+                  ProximityServer proximityServer = kvpServer.Key;
+                  List<Activity> activityList = kvpServer.Value;
+
+                  if (proximityServer.AvailableActivitySlots >= activityList.Count)
+                  {
+                    Task<bool> initTask = identityClient.InitializeActivitiesAsync(proximityServer, activityList);
+                    if (initTask.Result)
+                    {
+                      foreach (Activity activity in activityList)
+                        proximityServer.AddActivity(activity);
+                    }
+                    else
+                    {
+                      log.Error("Unable to create {0} activities on server '{1}' using client '{2}'.", activityList.Count, proximityServer.Name, identityClient.Profile.Name);
+                      error = true;
+                      break;
+                    }
+                  }
+                  else
+                  {
+                    log.Error("Proximity server '{0}' has only {1} activity slots left. Can't create {2} activities using client '{3}'.", proximityServer.Name, proximityServer.AvailableActivitySlots, activityList.Count, identityClient.Profile.Name);
+                    error = true;
+                    break;
+                  }
+                }
+
+                if (error) break;
+              }
+
+              if (error) break;
+
+
+              if (!error) log.Info("  * {0} identities created and initialized on {1} servers.", cmd.CreateCount, cmd.Count);
+              break;
+            }
+
+
+
+          case CommandType.DeleteActivity:
+            {
+              CommandDeleteActivity cmd = (CommandDeleteActivity)command;
+
+              List<Activity> activityList = new List<Activity>();
+              for (int i = 0; i < cmd.Count; i++)
+              {
+                List<Activity> activityGroup;
+                if (activityGroups.TryGetValue(cmd.Name, out activityGroup))
+                {
+                  int activityIndex = cmd.Index + i;
+                  if ((0 <= activityIndex) && (activityIndex < activityGroup.Count))
+                  {
+                    Activity activity = activityGroup[activityIndex];
+                    activityList.Add(activity);
+                    activityGroup[activityIndex] = null;
+                  }
+                  else
+                  {
+                    log.Error("  * Activity group '{0}' does not have member index {1}.", activityIndex);
+                    error = true;
+                    break;
+                  }
+                }
+                else
+                {
+                  log.Error("  * Activity group '{0}' does not exist.", cmd.Name);
+                  error = true;
+                  break;
+                }
+              }
+
+              if (error) break;
+
+
+              foreach (Activity activity in activityList)
+              {
+                IdentityClient identityClient = activity.OwnerIdentityClient;
+                Task <bool> deleteTask = identityClient.DeleteActivityAsync(activity.ProximityServer, activity.PrimaryInfo.ActivityId);
+                if (deleteTask.Result)
+                {
+                  activity.HostingActive = false;
+                  activity.ProximityServer.RemoveActivity(activity);
+
+                  if (!activities.Remove(activity.GetName()))
+                    log.Error("Removing activity {0} from global list failed.", activity.GetName());
+                }
+                else 
+                {
+                  log.Error("Unable to delete activity '{0}' from server '{1}' using client '{2}'.", activity.GetName(), activity.ProximityServer.Name, identityClient.Profile.Name);
+                  error = true;
+                  break;
+                }
+              }
+
+              if (!error) log.Info("  * {0} activities deleted.", activityList.Count);
+
+              break;
+            }
+
+
+
           case CommandType.TestQuery:
             {
               CommandTestQuery cmd = (CommandTestQuery)command;
 
               List<ProfileServer> targetServers = new List<ProfileServer>();
-              for (int i = 0; i < cmd.PsCount; i++)
+              for (int i = 0; i < cmd.Count; i++)
               {
-                string name = GetInstanceName(cmd.PsGroup, cmd.PsIndex + i);
+                string name = GetServerInstanceName(cmd.Group, cmd.Index + i);
                 ProfileServer profileServer;
                 if (profileServers.TryGetValue(name, out profileServer))
                 {
@@ -534,8 +771,8 @@ namespace NetworkSimulator
                   }
                   byte[] targetServerId = targetServer.GetNetworkId();
                   client.InitializeTcpClient();
-                  Task<IdentityClient.SearchQueryInfo> searchTask = client.SearchQueryAsync(targetServer, nameFilter, typeFilter, queryLocation, cmd.Radius, false, cmd.IncludeImages);
-                  IdentityClient.SearchQueryInfo searchResults = searchTask.Result;
+                  Task<IdentityClient.ProfileSearchQueryInfo> searchTask = client.ProfileSearchQueryAsync(targetServer, nameFilter, typeFilter, queryLocation, cmd.Radius, false, cmd.IncludeImages);
+                  IdentityClient.ProfileSearchQueryInfo searchResults = searchTask.Result;
                   if (searchResults != null)
                   {
                     List<byte[]> expectedCoveredServers;
@@ -565,7 +802,114 @@ namespace NetworkSimulator
 
                     serversQueried++;
                   }
-                  else 
+                  else
+                  {
+                    log.Error("  * Unable to perform search on server instance '{0}'.", targetServer.Name);
+                    error = true;
+                    break;
+                  }
+                }
+              }
+              catch (Exception e)
+              {
+                log.Error("Exception occurred: {0}", e.ToString());
+                error = true;
+                break;
+              }
+
+              if (!error) log.Info("  * Results of search queries on {0} servers match expected results. {1} servers were offline and skipped.", serversQueried, serversSkipped);
+
+              break;
+            }
+
+
+
+
+          case CommandType.TestQueryActivity:
+            {
+              CommandTestQueryActivity cmd = (CommandTestQueryActivity)command;
+
+              List<ProximityServer> targetServers = new List<ProximityServer>();
+              for (int i = 0; i < cmd.Count; i++)
+              {
+                string name = GetServerInstanceName(cmd.Group, cmd.Index + i);
+                ProximityServer proximityServer;
+                if (proximityServers.TryGetValue(name, out proximityServer))
+                {
+                  targetServers.Add(proximityServer);
+                }
+                else
+                {
+                  log.Error("  * Proximity server instance '{0}' does not exist.", name);
+                  error = true;
+                  break;
+                }
+              }
+
+              int serversSkipped = 0;
+              int serversQueried = 0;
+              IdentityClient client = null;
+              try
+              {
+                client = new IdentityClient("Query Client", "Query Client", new GpsLocation(0, 0), null, 0, null, 0);
+
+                int maxResults = 10000;
+                string typeFilter = cmd.TypeFilter != "**" ? cmd.TypeFilter : null;
+                GpsLocation queryLocation = cmd.Latitude != GpsLocation.NoLocation.Latitude ? new GpsLocation(cmd.Latitude, cmd.Longitude) : null;
+                DateTime? startNotAfter = cmd.StartNotAfter != null ? (DateTime?)DateTime.UtcNow.AddSeconds(cmd.StartNotAfter.Value) : null;
+                DateTime? expirationNotBefore = cmd.ExpirationNotBefore != null ? (DateTime?)DateTime.UtcNow.AddSeconds(cmd.ExpirationNotBefore.Value) : null;
+                foreach (ProximityServer targetServer in targetServers)
+                {
+                  if (!targetServer.IsInitialized())
+                  {
+                    log.Trace("Proximity server '{0}' not initialized, skipping ...", targetServer.Name);
+                    serversSkipped++;
+                    continue;
+                  }
+
+                  byte[] targetServerId = targetServer.GetNetworkId();
+                  client.InitializeTcpClient();
+                  Task<IdentityClient.ActivitySearchQueryInfo> searchTask = client.ActivitySearchQueryAsync(targetServer, typeFilter, queryLocation, cmd.Radius, startNotAfter, expirationNotBefore, false);
+                  IdentityClient.ActivitySearchQueryInfo searchResults = searchTask.Result;
+                  if (searchResults != null)
+                  {
+                    List<byte[]> expectedCoveredServers;
+                    int localServerResults;
+                    List<ActivityQueryInformation> expectedSearchResults = targetServer.GetExpectedSearchResults(typeFilter, queryLocation, cmd.Radius, startNotAfter, expirationNotBefore, false, out expectedCoveredServers, out localServerResults);
+                    List<ActivityQueryInformation> realResults = searchResults.Results;
+                    List<byte[]> realCoveredServers = searchResults.CoveredServers;
+
+                    if (DebugModeEnabled)
+                    {
+                      log.Info("  * '{0}': {1} real results, {2} calculated results, {3} max. real results, {4} local server results, {5} real covered servers, {6} calculated covered servers.", targetServer.Name, realResults.Count, expectedSearchResults.Count, maxResults, localServerResults, realCoveredServers.Count, expectedCoveredServers.Count);
+                    }
+
+                    if (!CompareSearchResults(realResults, expectedSearchResults, maxResults))
+                    {
+                      log.Error("  * Real search results are different from the expected results on server instance '{0}'.", targetServer.Name);
+
+                      log.Debug("Expected results:");
+                      foreach (ActivityQueryInformation info in expectedSearchResults)
+                        log.Debug("  {0}", GetActivityName(info.SignedActivity.Activity.Type, info.SignedActivity.Activity.Id));
+
+                      log.Debug("Real results:");
+                      foreach (ActivityQueryInformation info in realResults)
+                        log.Debug("  {0}", GetActivityName(info.SignedActivity.Activity.Type, info.SignedActivity.Activity.Id));
+
+                      error = true;
+                      break;
+                    }
+
+                    if (!CompareCoveredServers(targetServerId, realCoveredServers, expectedCoveredServers, localServerResults, maxResults))
+                    {
+                      log.Error("  * Real covered servers are different from the expected covered servers on server instance '{0}'.", targetServer.Name);
+                      error = true;
+                      break;
+                    }
+
+                    serversQueried++;
+                  }
+                  else
                   {
                     log.Error("  * Unable to perform search on server instance '{0}'.", targetServer.Name);
                     error = true;
@@ -600,26 +944,28 @@ namespace NetworkSimulator
             {
               CommandTakeSnapshot cmd = (CommandTakeSnapshot)command;
 
-              HashSet<string> runningServerNames = new HashSet<string>(StringComparer.Ordinal);
-              foreach (ProfileServer ps in profileServers.Values)
+              HashSet<string> runningProfileServerNames = new HashSet<string>(StringComparer.Ordinal);
+              HashSet<string> runningProximityServerNames = new HashSet<string>(StringComparer.Ordinal);
+              foreach (ServerBase server in servers.Values)
               {
-                if (ps.IsRunningProcess())
+                if (server.IsRunningProcess())
                 {
-                  if (!ps.Stop())
+                  if (!server.Stop())
                   {
-                    log.Error("  * Failed to stop profile server '{0}'.", ps.Name);
+                    log.Error("  * Failed to stop server '{0}'.", server.Name);
                     error = true;
                     break;
                   }
 
-                  runningServerNames.Add(ps.Name);
+                  if (server.Type == ServerType.Profile) runningProfileServerNames.Add(server.Name);
+                  else runningProximityServerNames.Add(server.Name);
                 }
               }
 
               if (error) break;
 
               Snapshot snapshot = new Snapshot(cmd.Name);
-              if (snapshot.Take(runningServerNames, profileServers, identityClients))
+              if (snapshot.Take(runningProfileServerNames, profileServers, runningProximityServerNames, proximityServers, identityClients, activities))
               {
                 log.Info("  * Snapshot '{0}' has been created.", cmd.Name);
               }
@@ -659,6 +1005,16 @@ namespace NetworkSimulator
                 {
                   ProfileServer profileServer = ProfileServer.CreateFromSnapshot(serverSnapshot);
                   profileServers.Add(profileServer.Name, profileServer);
+                  servers.Add(profileServer.Name, profileServer);
+                }
+
+                // Initialize proximity servers.
+                log.Debug("Initializing proximity servers.");
+                foreach (ProximityServerSnapshot serverSnapshot in snapshot.ProximityServers)
+                {
+                  ProximityServer proximityServer = ProximityServer.CreateFromSnapshot(serverSnapshot);
+                  proximityServers.Add(proximityServer.Name, proximityServer);
+                  servers.Add(proximityServer.Name, proximityServer);
                 }
 
                 // Initialize identities and connect them with their profile servers.
@@ -671,24 +1027,51 @@ namespace NetworkSimulator
                   identityClients.Add(identityClient.Profile.Name, identityClient);
                 }
 
+
+                // Initialize activities and connect them with their proximity servers.
+                log.Debug("Initializing activities.");
+                foreach (ActivitySnapshot activitySnapshot in snapshot.Activities)
+                {
+                  ProximityServer proximityServer = proximityServers[activitySnapshot.ProximityServerName];
+                  IdentityClient ownerIdentityClient = identityClients[activitySnapshot.IdentityClientName];
+                  Activity activity = Activity.CreateFromSnapshot(activitySnapshot, proximityServer, ownerIdentityClient);
+                  proximityServer.AddActivitySnapshot(activity);
+                  activities.Add(activity.GetName(), activity);
+                }
+
+
                 // Initialize neighbor relations.
                 log.Debug("Initializing neighborhoods.");
                 foreach (ProfileServerSnapshot serverSnapshot in snapshot.ProfileServers)
                 {
                   ProfileServer profileServer = profileServers[serverSnapshot.Name];
 
-                  List<ProfileServer> neighborServers = new List<ProfileServer>();
+                  List<ServerBase> neighborServers = new List<ServerBase>();
                   foreach (string neighborName in serverSnapshot.LocServer.NeighborsNames)
                   {
-                    ProfileServer neighborServer = profileServers[neighborName];
+                    ServerBase neighborServer = servers[neighborName];
                     neighborServers.Add(neighborServer);
                   }
 
                   profileServer.LocServer.SetNeighborhood(neighborServers);
                 }
 
-                // Start LOC servers and profile servers.
-                log.Debug("Starting servers.");
+                foreach (ProximityServerSnapshot serverSnapshot in snapshot.ProximityServers)
+                {
+                  ProximityServer proximityServer = proximityServers[serverSnapshot.Name];
+
+                  List<ServerBase> neighborServers = new List<ServerBase>();
+                  foreach (string neighborName in serverSnapshot.LocServer.NeighborsNames)
+                  {
+                    ServerBase neighborServer = servers[neighborName];
+                    neighborServers.Add(neighborServer);
+                  }
+
+                  proximityServer.LocServer.SetNeighborhood(neighborServers);
+                }
+
+                // Start LOC servers and servers.
+                log.Debug("Starting profile servers and their LOC servers.");
                 foreach (ProfileServerSnapshot serverSnapshot in snapshot.ProfileServers)
                 {
                   ProfileServer profileServer = profileServers[serverSnapshot.Name];
@@ -704,6 +1087,28 @@ namespace NetworkSimulator
                     if (!profileServer.Start())
                     {
                       log.Error("  * Unable to start profile server instance '{0}'.", profileServer.Name);
+                      error = true;
+                      break;
+                    }
+                  }
+                }
+
+                log.Debug("Starting proximity servers and their LOC servers.");
+                foreach (ProximityServerSnapshot serverSnapshot in snapshot.ProximityServers)
+                {
+                  ProximityServer proximityServer = proximityServers[serverSnapshot.Name];
+                  if (!proximityServer.LocServer.Start())
+                  {
+                    log.Error("  * Unable to start LOC server of proximity server instance '{0}'.", proximityServer.Name);
+                    error = true;
+                    break;
+                  }
+
+                  if (serverSnapshot.IsRunning)
+                  {
+                    if (!proximityServer.Start())
+                    {
+                      log.Error("  * Unable to start proximity server instance '{0}'.", proximityServer.Name);
                       error = true;
                       break;
                     }
@@ -751,6 +1156,7 @@ namespace NetworkSimulator
       return res;
     }
 
+
     /// <summary>
     /// Removes data from previous run.
     /// </summary>
@@ -777,13 +1183,14 @@ namespace NetworkSimulator
       return res;
     }
 
+
     /// <summary>
     /// Generates instance name from a group name and an instance number.
     /// </summary>
     /// <param name="GroupName">Name of the server group.</param>
     /// <param name="InstanceNumber">Instance number.</param>
     /// <returns>Instance name.</returns>
-    public string GetInstanceName(string GroupName, int InstanceNumber)
+    public static string GetServerInstanceName(string GroupName, int InstanceNumber)
     {
       return string.Format("{0}{1:000}", GroupName, InstanceNumber);
     }
@@ -795,9 +1202,21 @@ namespace NetworkSimulator
     /// <param name="GroupName">Name of the identity group.</param>
     /// <param name="IdentityNumber">Identity number.</param>
     /// <returns>Identity name.</returns>
-    public string GetIdentityName(string GroupName, int IdentityNumber)
+    public static string GetIdentityName(string GroupName, int IdentityNumber)
     {
       return string.Format("{0}{1:00000}", GroupName, IdentityNumber);
+    }
+
+
+    /// <summary>
+    /// Generates internal activity name from an identity group name and an identity number.
+    /// </summary>
+    /// <param name="GroupName">Name of the activity group.</param>
+    /// <param name="ActivityId">Activity identifier.</param>
+    /// <returns>Activity name.</returns>
+    public static string GetActivityName(string GroupName, uint ActivityId)
+    {
+      return string.Format("{0}{1:00000}", GroupName, ActivityId);
     }
 
 
@@ -811,7 +1230,7 @@ namespace NetworkSimulator
 
       bool res = false;
       bool error = false;
-      foreach (ProfileServer server in profileServers.Values)
+      foreach (ServerBase server in servers.Values)
       {        
         string logDir;
         List<string> fileNames;
@@ -867,16 +1286,17 @@ namespace NetworkSimulator
     }
 
 
+
     /// <summary>
     /// Compares results of a test search query against the expected results.
     /// </summary>
-    /// <param name="RealSearchResults">Search results obtained by real client from a profile server.</param>
+    /// <param name="RealSearchResults">Search results obtained by real client from a server.</param>
     /// <param name="ExpectedSearchResults">Results calculated from the global knowledge.</param>
     /// <param name="MaxTotalResults">Limit to total number of results. If <paramref name="ExpectedSearchResults"/> is lower than this value, 
     /// the result sets must be exactly the same, otherwise <paramref name="ExpectedSearchResults"/> must be a superset of <paramref name="RealSeachResults"/>
     /// and the number of real results must be equal to this value..</param>
     /// <returns>true if real results match expected results, false otherwise.</returns>
-    public bool CompareSearchResults(List<ProfileQueryInformation> RealSearchResults, List<ProfileQueryInformation> ExpectedSearchResults, int MaxTotalResults)
+    public bool CompareSearchResults<T>(List<T> RealSearchResults, List<T> ExpectedSearchResults, int MaxTotalResults) where T: IMessage
     {
       log.Trace("(RealSearchResults.Count:{0},ExpectedSearchResults.Count:{1},MaxTotalResults:{2})", RealSearchResults.Count, ExpectedSearchResults.Count, MaxTotalResults);
 
@@ -898,13 +1318,13 @@ namespace NetworkSimulator
       if (res)
       {
         HashSet<byte[]> expectedSearchBins = new HashSet<byte[]>(StructuralEqualityComparer<byte[]>.Default);
-        foreach (ProfileQueryInformation info in ExpectedSearchResults)
+        foreach (T info in ExpectedSearchResults)
         {
           byte[] infoBinary = info.ToByteArray();
           expectedSearchBins.Add(infoBinary);
         }
 
-        foreach (ProfileQueryInformation info in RealSearchResults)
+        foreach (T info in RealSearchResults)
         {
           byte[] infoBinary = info.ToByteArray();
           if (expectedSearchBins.Contains(infoBinary))
@@ -924,11 +1344,12 @@ namespace NetworkSimulator
     }
 
 
+
     /// <summary>
     /// Compares list of covered servers returned by a test search query with the list of expected covered servers.
     /// </summary>
     /// <param name="TargetServer">Network ID of profile server that the client queried.</param>
-    /// <param name="RealCoveredServers">List of covered servers obtained by real client from a profile server.</param>
+    /// <param name="RealCoveredServers">List of covered servers obtained by real client from a server.</param>
     /// <param name="ExpectedCoveredServers">List of covered servers calculated from the global knowledge.</param>
     /// <param name="LocalServerResults">Number of results from the server that was queried.</param>
     /// <param name="MaxTotalResults">Limit to total number of real results that could be obtained by the client.</param>
@@ -999,5 +1420,37 @@ namespace NetworkSimulator
       return res;
     }
 
+
+    /// <summary>
+    /// Finds nearest proximity server to a specific location.
+    /// </summary>
+    /// <param name="Location">GPS location to find nearest server to.</param>
+    /// <returns>Nearest proximity server to the specified location or null if no proximity server exists.</returns>
+    public ProximityServer FindNearestProximityServer(GpsLocation Location)
+    {
+      ProximityServer res = null;
+      GpsLocation bestLocation = null;
+      double distanceToBest = 0;
+
+      foreach (ProximityServer server in proximityServers.Values)
+      {
+        bool isCloser = false;
+
+        GpsLocation serverLocation = new GpsLocation(server.NodeLocation.Latitude, server.NodeLocation.Longitude);
+        double distance = Location.DistanceTo(serverLocation);
+
+        if (bestLocation != null) isCloser = distance < distanceToBest;
+        else isCloser = true;
+
+        if (isCloser)
+        { 
+          res = server;
+          bestLocation = serverLocation;
+          distanceToBest = distance;
+        }
+      }
+
+      return res;
+    }
   }
 }

@@ -13,8 +13,8 @@ using System.Threading.Tasks;
 namespace NetworkSimulator
 {
   /// <summary>
-  /// Simulator of LOC server. With each profile server we spawn a LOC server 
-  /// which will provide information about the neighborhood to the profile server.
+  /// Simulator of LOC server. With each server we spawn a LOC server 
+  /// which will provide information about the neighborhood to the server.
   /// </summary>
   public class LocServer
   {
@@ -27,26 +27,26 @@ namespace NetworkSimulator
     /// <summary>TCP port to listen on.</summary>
     private int port;
 
-    /// <summary>Associated profile server.</summary>
-    private ProfileServer profileServer;
+    /// <summary>Associated server.</summary>
+    private ServerBase associatedServer;
 
     /// <summary>Lock object to protect access to Neighbors.</summary>
     private object neighborsLock = new object();
 
-    /// <summary>List of profile servers that are neighbors of ProfileServer.</summary>
-    private Dictionary<string, ProfileServer> neighbors = new Dictionary<string, ProfileServer>(StringComparer.Ordinal);
+    /// <summary>List of servers that are neighbors of the associated server.</summary>
+    private Dictionary<string, ServerBase> neighbors = new Dictionary<string, ServerBase>(StringComparer.Ordinal);
 
     /// <summary>TCP server that provides information about the neighborhood via LocNet protocol.</summary>
     private TcpListener listener;
 
-    /// <summary>If profile server is connected, this is its connection.</summary>
-    private TcpClient connectedProfileServer;
+    /// <summary>If associated server is connected, this is its connection.</summary>
+    private TcpClient connectedAssociatedServer;
 
-    /// <summary>true if profile server sent us GetNeighbourNodesByDistanceLocalRequest request and wants to receive updates.</summary>
-    private bool connectedProfileServerWantsUpdates;
+    /// <summary>true if associated server sent us GetNeighbourNodesByDistanceLocalRequest request and wants to receive updates.</summary>
+    private bool connectedAssociatedServerWantsUpdates;
 
-    /// <summary>If profile server is connected, this is its message builder.</summary>
-    private LocMessageBuilder connectedProfileServerMessageBuilder;
+    /// <summary>If associated server is connected, this is its message builder.</summary>
+    private LocMessageBuilder connectedAssociatedServerMessageBuilder;
 
     /// <summary>Event that is set when acceptThread is not running.</summary>
     private ManualResetEvent acceptThreadFinished = new ManualResetEvent(true);
@@ -69,20 +69,28 @@ namespace NetworkSimulator
     /// <summary>Node location.</summary>
     private Iop.Locnet.GpsLocation nodeLocation;
 
+
     /// <summary>
     /// Initializes the LOC server instance.
     /// </summary>
-    /// <param name="ProfileServer">Associated profile server.</param>
-    public LocServer(ProfileServer ProfileServer)
+    /// <param name="IpAddress">IP address on which LOC server is going to listen.</param>
+    /// <param name="Port">TCP port on which LOC server is going to listen.</param>
+    /// <param name="Location">GPS location of the LOC server.</param>
+    /// <param name="AssociatedServer">Associated server.</param>
+    public LocServer(IPAddress IpAddress, int Port, IopProtocol.GpsLocation Location, ServerBase AssociatedServer)
     {
-      log = new Logger("NetworkSimulator.LocServer", "[" + ProfileServer.Name + "] ");
-      log.Trace("()");
+      log = new Logger("NetworkSimulator.LocServer", string.Format("[{0}#{1}] ", AssociatedServer is ProfileServer ? "ps" : "px", AssociatedServer.Name));
+      log.Trace("(IpAddress:{0},Port:{1},Location:[{2}])", IpAddress, Port, Location);
 
-      this.profileServer = ProfileServer;
-      ipAddress = ProfileServer.IpAddress;
-      port = ProfileServer.LocPort;
+      this.associatedServer = AssociatedServer;
+      ipAddress = IpAddress;
+      port = Port;
 
-      nodeLocation = ProfileServer.NodeLocation;
+      nodeLocation = new Iop.Locnet.GpsLocation()
+      {
+        Latitude = Location.GetLocationTypeLatitude(),
+        Longitude = Location.GetLocationTypeLongitude()
+      };
 
       listener = new TcpListener(ipAddress, port);
       listener.Server.LingerState = new LingerOption(true, 0);
@@ -90,6 +98,7 @@ namespace NetworkSimulator
 
       log.Trace("(-)");
     }
+
 
     /// <summary>
     /// Starts the TCP server.
@@ -224,13 +233,13 @@ namespace NetworkSimulator
 
       log.Debug("(Client.Client.RemoteEndPoint:{0})", Client.Client.RemoteEndPoint);
 
-      connectedProfileServer = Client;
-      connectedProfileServerMessageBuilder = new LocMessageBuilder(0, new List<SemVer>() { SemVer.V100 });
+      connectedAssociatedServer = Client;
+      connectedAssociatedServerMessageBuilder = new LocMessageBuilder(0, new List<SemVer>() { SemVer.V100 });
 
-      await ReceiveMessageLoop(Client, connectedProfileServerMessageBuilder);
+      await ReceiveMessageLoop(Client, connectedAssociatedServerMessageBuilder);
 
-      connectedProfileServerWantsUpdates = false;
-      connectedProfileServer = null;
+      connectedAssociatedServerWantsUpdates = false;
+      connectedAssociatedServer = null;
       Client.Dispose();
 
       log.Debug("(-)");
@@ -369,8 +378,8 @@ namespace NetworkSimulator
 
                 if (res && setKeepAlive)
                 {
-                  connectedProfileServerWantsUpdates = true;
-                  log.Debug("Profile server '{0}' is now connected to its LOC server and waiting for updates.", profileServer.Name);
+                  connectedAssociatedServerWantsUpdates = true;
+                  log.Debug("{0} server '{1}' is now connected to its LOC server and waiting for updates.", associatedServer.Type, associatedServer.Name);
                 }
               }
               else
@@ -497,7 +506,7 @@ namespace NetworkSimulator
 
     /// <summary>
     /// Processes GetNeighbourNodesByDistanceLocalRequest message from client.
-    /// <para>Obtains information about the profile server's neighborhood and initiates sending updates to it.</para>
+    /// <para>Obtains information about the server's neighborhood and initiates sending updates to it.</para>
     /// </summary>
     /// <param name="Client">TCP client that sent the request.</param>
     /// <param name="MessageBuilder">Client's message builder.</param>
@@ -516,9 +525,9 @@ namespace NetworkSimulator
       List<NodeInfo> neighborList = new List<NodeInfo>();
       lock (neighborsLock)
       {
-        foreach (ProfileServer ps in neighbors.Values)
+        foreach (ServerBase neighborServer in neighbors.Values)
         {
-          NodeInfo ni = ps.GetNodeInfo();
+          NodeInfo ni = neighborServer.GetNodeInfo();
           neighborList.Add(ni);
         }
       }
@@ -531,11 +540,11 @@ namespace NetworkSimulator
 
 
     /// <summary>
-    /// Adds neighbors to the profile server.
+    /// Adds neighbors to the associated server.
     /// </summary>
     /// <param name="NeighborhoodList">List of all servers in the new neighborhood.</param>
     /// <returns>true if the function succeeds, false otherwise.</returns>
-    public bool AddNeighborhood(List<ProfileServer> NeighborhoodList)
+    public bool AddNeighborhood(List<ServerBase> NeighborhoodList)
     {
       log.Trace("(NeighborhoodList.Count:{0})", NeighborhoodList.Count);
 
@@ -543,62 +552,62 @@ namespace NetworkSimulator
       bool res = false;
       lock (neighborsLock)
       {
-        foreach (ProfileServer ps in NeighborhoodList)
+        foreach (ServerBase neighborServer in NeighborhoodList)
         {
-          // Do not add your own profile server.
-          if (ps.Name == profileServer.Name) continue;
+          // Do not add your own associated server.
+          if (neighborServer.Name == associatedServer.Name) continue;
 
           // Ignore neighbors that we already have in the list.
-          if (neighbors.ContainsKey(ps.Name))
+          if (neighbors.ContainsKey(neighborServer.Name))
           {
-            log.Debug("Profile server '{0}' already has '{1}' as its neighbor.", profileServer.Name, ps.Name);
+            log.Debug("Server '{0}' already has '{1}' as its neighbor.", associatedServer.Name, neighborServer.Name);
             continue;
           }
 
-          ps.Lock();
-          if (ps.IsInitialized())
+          neighborServer.Lock();
+          if (neighborServer.IsInitialized())
           {
-            neighbors.Add(ps.Name, ps);
-            log.Debug("Profile server '{0}' added to the neighborhood of server '{1}'.", ps.Name, profileServer.Name);
+            neighbors.Add(neighborServer.Name, neighborServer);
+            log.Debug("Server '{0}' added to the neighborhood of server '{1}'.", neighborServer.Name, associatedServer.Name);
 
             // This neighbor server already runs, so we know its profile 
-            // we can inform our profile server about it.
+            // we can inform our associated server about it.
             NeighbourhoodChange change = new NeighbourhoodChange();
-            change.AddedNodeInfo = ps.GetNodeInfo();
+            change.AddedNodeInfo = neighborServer.GetNodeInfo();
             changes.Add(change);
           }
           else
           {
             // This neighbor server does not run yet, so we do not have its profile.
             // We will install an event to be triggered when this server starts.
-            log.Debug("Profile server '{0}' is not initialized yet, installing notification for server '{1}'.", ps.Name, profileServer.Name);
-            ps.InstallInitializationNeighborhoodNotification(profileServer);
+            log.Debug("Server '{0}' is not initialized yet, installing notification for server '{1}'.", neighborServer.Name, associatedServer.Name);
+            neighborServer.InstallInitializationNeighborhoodNotification(associatedServer);
           }
-          ps.Unlock();
+          neighborServer.Unlock();
         }
       }
 
-      if ((connectedProfileServer != null) && connectedProfileServerWantsUpdates)
+      if ((connectedAssociatedServer != null) && connectedAssociatedServerWantsUpdates)
       {
-        // If our profile server is running already, adding servers to its neighborhood 
-        // ends with sending update notification to the profile server.
+        // If our associated server is running already, adding servers to its neighborhood 
+        // ends with sending update notification to the associated server.
         if (changes.Count > 0)
         {
-          log.Debug("Sending {0} neighborhood changes to profile server '{1}'.", changes.Count, profileServer.Name);
-          LocProtocolMessage message = connectedProfileServerMessageBuilder.CreateNeighbourhoodChangedNotificationRequest(changes);
-          res = SendMessageAsync(connectedProfileServer, message).Result;
+          log.Debug("Sending {0} neighborhood changes to server '{1}'.", changes.Count, associatedServer.Name);
+          LocProtocolMessage message = connectedAssociatedServerMessageBuilder.CreateNeighbourhoodChangedNotificationRequest(changes);
+          res = SendMessageAsync(connectedAssociatedServer, message).Result;
         }
         else
         {
-          log.Debug("No neighborhood changes to send to profile server '{0}'.", profileServer.Name);
+          log.Debug("No neighborhood changes to send to server '{0}'.", associatedServer.Name);
           res = true;
         }
       }
       else
       {
-        // Our profile server is not started/connected yet, which means we just modified its neighborhood,
+        // Our associated server is not started/connected yet, which means we just modified its neighborhood,
         // and the information about its neighborhood will be send to it once it sends us GetNeighbourNodesByDistanceLocalRequest.
-        log.Debug("Profile server '{0}' is not connected or not fully initialized yet, can't send changes.", profileServer.Name);
+        log.Debug("Associated server '{0}' is not connected or not fully initialized yet, can't send changes.", associatedServer.Name);
         res = true;
       }
 
@@ -608,11 +617,11 @@ namespace NetworkSimulator
 
 
     /// <summary>
-    /// Sets neighborhood of the profile server during the load from the snapshot.
+    /// Sets neighborhood of the associated server during the load from the snapshot.
     /// </summary>
     /// <param name="NeighborhoodList">List of all servers in the server's neighborhood.</param>
     /// <returns>true if the function succeeds, false otherwise.</returns>
-    public bool SetNeighborhood(List<ProfileServer> NeighborhoodList)
+    public bool SetNeighborhood(List<ServerBase> NeighborhoodList)
     {
       log.Trace("(NeighborhoodList.Count:{0})", NeighborhoodList.Count);
 
@@ -621,8 +630,8 @@ namespace NetworkSimulator
       {
         neighbors.Clear();
 
-        foreach (ProfileServer ps in NeighborhoodList)
-          neighbors.Add(ps.Name, ps);
+        foreach (ServerBase neighbor in NeighborhoodList)
+          neighbors.Add(neighbor.Name, neighbor);
       }
 
       log.Trace("(-):{0}", res);
@@ -631,11 +640,11 @@ namespace NetworkSimulator
 
 
     /// <summary>
-    /// Removes servers from the profile server's neighborhood.
+    /// Removes servers from the associated server's neighborhood.
     /// </summary>
     /// <param name="NeighborhoodList">List of servers to cancel neighbor connection with..</param>
     /// <returns>true if the function succeeds, false otherwise.</returns>
-    public bool CancelNeighborhood(List<ProfileServer> NeighborhoodList)
+    public bool CancelNeighborhood(List<ServerBase> NeighborhoodList)
     {
       log.Trace("(NeighborhoodList.Count:{0})", NeighborhoodList.Count);
 
@@ -643,24 +652,24 @@ namespace NetworkSimulator
       bool res = false;
       lock (neighborsLock)
       {
-        foreach (ProfileServer ps in NeighborhoodList)
+        foreach (ServerBase neighborServer in NeighborhoodList)
         {
-          // Do not process your own profile server.
-          if (ps.Name == profileServer.Name) continue;
+          // Do not process your own associated server.
+          if (neighborServer.Name == associatedServer.Name) continue;
 
-          ps.Lock();
-          if (ps.IsInitialized())
+          neighborServer.Lock();
+          if (neighborServer.IsInitialized())
           {
             // Ignore servers that are not in the neighborhood.
-            if (neighbors.ContainsKey(ps.Name))
+            if (neighbors.ContainsKey(neighborServer.Name))
             {
-              neighbors.Remove(ps.Name);
-              log.Trace("Profile server '{0}' removed from the neighborhood of server '{1}'.", ps.Name, profileServer.Name);
+              neighbors.Remove(neighborServer.Name);
+              log.Trace("Server '{0}' removed from the neighborhood of server '{1}'.", neighborServer.Name, associatedServer.Name);
 
               // This neighbor server already runs, so we know its profile 
-              // we can inform our profile server about it.
+              // we can inform our associated server about it.
               NeighbourhoodChange change = new NeighbourhoodChange();
-              change.RemovedNodeId = ProtocolHelper.ByteArrayToByteString(ps.GetNetworkId());
+              change.RemovedNodeId = ProtocolHelper.ByteArrayToByteString(neighborServer.GetNetworkId());
               changes.Add(change);
             }
           }
@@ -668,34 +677,34 @@ namespace NetworkSimulator
           {
             // This neighbor server does not run yet, so we do not have its profile.
             // We will uninstall a possibly installed event.
-            log.Debug("Profile server '{0}' is not initialized yet, uninstalling notification for server '{1}'.", ps.Name, profileServer.Name);
-            ps.UninstallInitializationNeighborhoodNotification(profileServer);
+            log.Debug("Server '{0}' is not initialized yet, uninstalling notification for server '{1}'.", neighborServer.Name, associatedServer.Name);
+            neighborServer.UninstallInitializationNeighborhoodNotification(associatedServer);
           }
-          ps.Unlock();
+          neighborServer.Unlock();
         }
       }
 
-      if ((connectedProfileServer != null) && connectedProfileServerWantsUpdates)
+      if ((connectedAssociatedServer != null) && connectedAssociatedServerWantsUpdates)
       {
-        // If our profile server is running already, removing servers to its neighborhood 
-        // ends with sending update notification to the profile server.
+        // If our associated server is running already, removing servers to its neighborhood 
+        // ends with sending update notification to the associated server.
         if (changes.Count > 0)
         {
-          log.Debug("Sending {0} neighborhood changes to profile server '{1}'.", changes.Count, profileServer.Name);
-          LocProtocolMessage message = connectedProfileServerMessageBuilder.CreateNeighbourhoodChangedNotificationRequest(changes);
-          res = SendMessageAsync(connectedProfileServer, message).Result;
+          log.Debug("Sending {0} neighborhood changes to server '{1}'.", changes.Count, associatedServer.Name);
+          LocProtocolMessage message = connectedAssociatedServerMessageBuilder.CreateNeighbourhoodChangedNotificationRequest(changes);
+          res = SendMessageAsync(connectedAssociatedServer, message).Result;
         }
         else
         {
-          log.Debug("No neighborhood changes to send to profile server '{0}'.", profileServer.Name);
+          log.Debug("No neighborhood changes to send to server '{0}'.", associatedServer.Name);
           res = true;
         }
       }
       else
       {
-        // Our profile server is not started/connected yet, which means we just modified its neighborhood,
+        // Our associated server is not started/connected yet, which means we just modified its neighborhood,
         // and the information about its neighborhood will be send to it once it sends us GetNeighbourNodesByDistanceLocalRequest.
-        log.Debug("Profile server '{0}' is not connected or not fully initialized yet, can't send changes.", profileServer.Name);
+        log.Debug("Server '{0}' is not connected or not fully initialized yet, can't send changes.", associatedServer.Name);
         res = true;
       }
 
@@ -706,7 +715,7 @@ namespace NetworkSimulator
 
     /// <summary>
     /// Processes RegisterServiceRequest message from client.
-    /// <para>Obtains information about the profile server's NodeProfile.</para>
+    /// <para>Obtains information about the associated server's NodeProfile.</para>
     /// </summary>
     /// <param name="Client">TCP client that sent the request.</param>
     /// <param name="MessageBuilder">Client's message builder.</param>
@@ -721,11 +730,27 @@ namespace NetworkSimulator
       RegisterServiceRequest registerServiceRequest = RequestMessage.Request.LocalService.RegisterService;
 
       byte[] serverId = registerServiceRequest.Service.ServiceData.ToByteArray();
-      if ((registerServiceRequest.Service.Type == ServiceType.Profile) && (serverId.Length == 32))
+      switch (associatedServer.Type)
       {
-        profileServer.SetNetworkId(serverId);
+        case ServerType.Profile:
+          if ((registerServiceRequest.Service.Type == ServiceType.Profile) && (serverId.Length == 32)) associatedServer.SetNetworkId(serverId);
+          else log.Error("Received register service request is invalid.");
+          break;
+
+        case ServerType.Proximity:
+          if ((registerServiceRequest.Service.Type == ServiceType.Proximity) && (serverId.Length == 32))
+          {
+            // SetNetworkId sends LOC neighborhood change notifications to neighbors of the server.
+            // In case of Proximity server, however, we need to wait for serverProcessInitializationCompleteEvent as well.
+            // We will create a worker thread that waits for serverProcessInitializationCompleteEvent and sets the network ID.
+            ThreadPool.QueueUserWorkItem(new WaitCallback(associatedServer.SetNetworkIdCallback), serverId);
+          } else log.Error("Received register service request is invalid.");
+          break;
+
+        default:
+          log.Error("Invalid associated server type {0}.", associatedServer.Type);
+          break;
       }
-      else log.Error("Received register service request is invalid.");
 
       log.Trace("(-):*.Response.Status={0}", res.Response.Status);
       return res;
@@ -733,7 +758,7 @@ namespace NetworkSimulator
 
     /// <summary>
     /// Processes DeregisterServiceRequest message from client.
-    /// <para>Removes information about the profile server's NodeProfile.</para>
+    /// <para>Removes information about the server's NodeProfile.</para>
     /// </summary>
     /// <param name="Client">TCP client that sent the request.</param>
     /// <param name="MessageBuilder">Client's message builder.</param>
@@ -746,19 +771,19 @@ namespace NetworkSimulator
       LocProtocolMessage res = MessageBuilder.CreateDeregisterServiceResponse(RequestMessage);
 
       DeregisterServiceRequest deregisterServiceRequest = RequestMessage.Request.LocalService.DeregisterService;
-      profileServer.Uninitialize();
+      associatedServer.Uninitialize();
 
       log.Trace("(-):*.Response.Status={0}", res.Response.Status);
       return res;
     }
 
     /// <summary>
-    /// Returns list of related profile server's neighbors.
+    /// Returns list of related server's neighbors.
     /// </summary>
-    /// <returns>List of related profile server's neigbhors.</returns>
-    public List<ProfileServer> GetNeighbors()
+    /// <returns>List of related server's neigbhors.</returns>
+    public List<ServerBase> GetNeighbors()
     {
-      List<ProfileServer> res = null;
+      List<ServerBase> res = null;
 
       lock (neighborsLock)
       {
@@ -784,56 +809,14 @@ namespace NetworkSimulator
     }
 
     /// <summary>
-    /// Adds a neighbor profile server to the list of neighbors when loading simulation from snapshot.
+    /// Adds a neighbor server to the list of neighbors when loading simulation from snapshot.
     /// </summary>
-    public void AddNeighborSnapshot(ProfileServer Neighbor)
+    public void AddNeighborSnapshot(ServerBase Neighbor)
     {
       lock (neighborsLock)
       {
         neighbors.Add(Neighbor.Name, Neighbor);
       }
     }
-
-
-    /// <summary>
-    /// Checks whether LOC node information contains a Profile Server service and if so, it returns its port and network ID.
-    /// </summary>
-    /// <param name="NodeInfo">Node information structure to scan.</param>
-    /// <param name="ProfileServerPort">If the node information contains Profile Server type of service, this is filled with the Profile Server port.</param>
-    /// <param name="ProfileServerId">If the node information contains Profile Server type of service, this is filled with the Profile Server network ID.</param>
-    /// <returns>true if the node information contains Profile Server type of service, false otherwise.</returns>
-    public bool HasProfileServerService(NodeInfo NodeInfo, out int ProfileServerPort, out byte[] ProfileServerId)
-    {
-      log.Trace("()");
-
-      bool res = false;
-      ProfileServerPort = 0;
-      ProfileServerId = null;
-      foreach (ServiceInfo si in NodeInfo.Services)
-      {
-        if (si.Type == ServiceType.Profile)
-        {
-          bool portValid = (0 < si.Port) && (si.Port <= 65535);
-          bool serviceDataValid = si.ServiceData.Length == 32;
-          if (portValid && serviceDataValid)
-          {
-            ProfileServerPort = (int)si.Port;
-            ProfileServerId = si.ServiceData.ToByteArray();
-            res = true;
-          }
-          else
-          {
-            if (!portValid) log.Warn("Invalid service port {0}.", si.Port);
-            if (!serviceDataValid) log.Warn("Invalid identifier length in ServiceData: {0} bytes.", si.ServiceData.Length);
-          }
-
-          break;
-        }
-      }
-
-      log.Trace("(-):{0}", res);
-      return res;
-    }
-
   }
 }

@@ -184,6 +184,65 @@ namespace NetworkSimulator
           }
 
 
+        case CommandType.ProximityServer:
+          {
+            if (paramCount != 6)
+            {
+              log.Error("ProximityServer requires 6 parameters, but {0} parameters found on line {1}.", paramCount, LineNumber);
+              break;
+            }
+
+            CommandProximityServer command = new CommandProximityServer(LineNumber, line)
+            {
+              GroupName = Parts[p++],
+              Count = int.Parse(Parts[p++]),
+              BasePort = int.Parse(Parts[p++]),
+              Latitude = decimal.Parse(Parts[p++], CultureInfo.InvariantCulture),
+              Longitude = decimal.Parse(Parts[p++], CultureInfo.InvariantCulture),
+              Radius = int.Parse(Parts[p++])
+            };
+
+            bool countValid = (1 <= command.Count) && (command.Count <= 999);
+            if (!countValid)
+            {
+              log.Error("Count '{0}' on line {1} is invalid. It must be an integer between 1 and 999.", command.Count, LineNumber);
+              break;
+            }
+
+            int basePortUpperLimit = 65535 - 20 * command.Count;
+            bool basePortValid = (1 <= command.BasePort) && (command.BasePort <= basePortUpperLimit);
+            if (!basePortValid)
+            {
+              log.Error("Having Count {0}, BasePort '{1}' on line {2} is invalid. It must be an integer between 1 and {3}.", command.Count, command.BasePort, LineNumber, basePortUpperLimit);
+              break;
+            }
+
+            bool latitudeValid = new GpsLocation(command.Latitude, 0).IsValid();
+            if (!latitudeValid)
+            {
+              log.Error("Latitude '{0}' on line {1} is invalid. It must be a decimal number between -90 and 90.", command.Latitude, LineNumber);
+              break;
+            }
+
+            bool longitudeValid = new GpsLocation(0, command.Longitude).IsValid();
+            if (!longitudeValid)
+            {
+              log.Error("Longitude '{0}' on line {1}. It must be a decimal number between -179.999999 and 180.", command.Longitude, LineNumber);
+              break;
+            }
+
+            bool radiusValid = (0 <= command.Radius) && (command.Radius <= MaxRadius);
+            if (!radiusValid)
+            {
+              log.Error("Radius '{0}' given on line {1}. It must be an integer between 0 and {2}.", command.Radius, LineNumber, MaxRadius);
+              break;
+            }
+
+            res = command;
+            break;
+          }
+
+
         case CommandType.StartServer:
           {
             if (paramCount != 3)
@@ -194,29 +253,29 @@ namespace NetworkSimulator
 
             CommandStartServer command = new CommandStartServer(LineNumber, line)
             {
-              PsGroup = Parts[p++],
-              PsIndex = int.Parse(Parts[p++]),
-              PsCount = int.Parse(Parts[p++])
+              Group = Parts[p++],
+              Index = int.Parse(Parts[p++]),
+              Count = int.Parse(Parts[p++])
             };
 
-            bool psIndexValid = (1 <= command.PsIndex) && (command.PsIndex <= 999);
-            if (!psIndexValid)
+            bool indexValid = (1 <= command.Index) && (command.Index <= 999);
+            if (!indexValid)
             {
-              log.Error("PsIndex '{0}' on line {1} is invalid. It must be an integer between 1 and 999.", command.PsIndex, LineNumber);
+              log.Error("Index '{0}' on line {1} is invalid. It must be an integer between 1 and 999.", command.Index, LineNumber);
               break;
             }
 
-            bool psCountValid = (1 <= command.PsCount) && (command.PsCount <= 999);
-            if (!psCountValid)
+            bool countValid = (1 <= command.Count) && (command.Count <= 999);
+            if (!countValid)
             {
-              log.Error("PsCount '{0}' on line {1} is invalid. It must be an integer between 1 and 999.", command.PsCount, LineNumber);
+              log.Error("Count '{0}' on line {1} is invalid. It must be an integer between 1 and 999.", command.Count, LineNumber);
               break;
             }
 
-            psCountValid = command.PsIndex + command.PsCount <= 999;
-            if (!psCountValid)
+            countValid = command.Index + command.Count <= 999;
+            if (!countValid)
             {
-              log.Error("Having PsIndex '{0}', PsCount '{1}' on line {2} is invalid. PsIndex + PsCount must not be greater than 999.", command.PsIndex, command.PsCount, LineNumber);
+              log.Error("Having Index '{0}', Count '{1}' on line {2} is invalid. Index + Count must not be greater than 999.", command.Index, command.Count, LineNumber);
               break;
             }
 
@@ -234,29 +293,29 @@ namespace NetworkSimulator
 
             CommandStopServer command = new CommandStopServer(LineNumber, line)
             {
-              PsGroup = Parts[p++],
-              PsIndex = int.Parse(Parts[p++]),
-              PsCount = int.Parse(Parts[p++])
+              Group = Parts[p++],
+              Index = int.Parse(Parts[p++]),
+              Count = int.Parse(Parts[p++])
             };
 
-            bool psIndexValid = (1 <= command.PsIndex) && (command.PsIndex <= 999);
-            if (!psIndexValid)
+            bool indexValid = (1 <= command.Index) && (command.Index <= 999);
+            if (!indexValid)
             {
-              log.Error("PsIndex '{0}' on line {1} is invalid. It must be an integer between 1 and 999.", command.PsIndex, LineNumber);
+              log.Error("Index '{0}' on line {1} is invalid. It must be an integer between 1 and 999.", command.Index, LineNumber);
               break;
             }
 
-            bool psCountValid = (1 <= command.PsCount) && (command.PsCount <= 999);
-            if (!psCountValid)
+            bool countValid = (1 <= command.Count) && (command.Count <= 999);
+            if (!countValid)
             {
-              log.Error("PsCount '{0}' on line {1} is invalid. It must be an integer between 1 and 999.", command.PsCount, LineNumber);
+              log.Error("Count '{0}' on line {1} is invalid. It must be an integer between 1 and 999.", command.Count, LineNumber);
               break;
             }
 
-            psCountValid = command.PsIndex + command.PsCount <= 999;
-            if (!psCountValid)
+            countValid = command.Index + command.Count <= 999;
+            if (!countValid)
             {
-              log.Error("Having PsIndex '{0}', PsCount '{1}' on line {2} is invalid. PsIndex + PsCount must not be greater than 999.", command.PsIndex, command.PsCount, LineNumber);
+              log.Error("Having Index '{0}', Count '{1}' on line {2} is invalid. Index + Count must not be greater than 999.", command.Index, command.Count, LineNumber);
               break;
             }
 
@@ -274,38 +333,38 @@ namespace NetworkSimulator
 
             CommandNeighborhood command = new CommandNeighborhood(LineNumber, line)
             {
-              PsGroups = new List<string>(),
-              PsIndexes = new List<int>(),
-              PsCounts = new List<int>()
+              Groups = new List<string>(),
+              Indexes = new List<int>(),
+              Counts = new List<int>()
             };
 
             for (int i = 0; i < paramCount; i += 3)
             {
-              command.PsGroups.Add(Parts[p++]);
-              command.PsIndexes.Add(int.Parse(Parts[p++]));
-              command.PsCounts.Add(int.Parse(Parts[p++]));
+              command.Groups.Add(Parts[p++]);
+              command.Indexes.Add(int.Parse(Parts[p++]));
+              command.Counts.Add(int.Parse(Parts[p++]));
 
               int groupNo = (i / 3) + 1;
               int groupIndex = groupNo - 1;
 
-              bool indexValid = (1 <= command.PsIndexes[groupIndex]) && (command.PsIndexes[groupIndex] <= 999);
+              bool indexValid = (1 <= command.Indexes[groupIndex]) && (command.Indexes[groupIndex] <= 999);
               if (!indexValid)
               {
-                log.Error("PsIndex${0} '{1}' on line {2} is invalid. It must be an integer between 1 and 999.", groupNo, command.PsIndexes[groupIndex], LineNumber);
+                log.Error("Index${0} '{1}' on line {2} is invalid. It must be an integer between 1 and 999.", groupNo, command.Indexes[groupIndex], LineNumber);
                 break;
               }
 
-              bool countValid = (1 <= command.PsCounts[groupIndex]) && (command.PsCounts[groupIndex] <= 999);
+              bool countValid = (1 <= command.Counts[groupIndex]) && (command.Counts[groupIndex] <= 999);
               if (!countValid)
               {
-                log.Error("PsCount${0} '{1}' on line {2} is invalid. It must be an integer between 1 and 999.", groupNo, command.PsCounts[groupIndex], LineNumber);
+                log.Error("Count${0} '{1}' on line {2} is invalid. It must be an integer between 1 and 999.", groupNo, command.Counts[groupIndex], LineNumber);
                 break;
               }
 
-              countValid = command.PsIndexes[groupIndex] + command.PsCounts[groupIndex] <= 999;
+              countValid = command.Indexes[groupIndex] + command.Counts[groupIndex] <= 999;
               if (!countValid)
               {
-                log.Error("Having PsIndex${0} '{1}', PsCount{0} '{2}' on line {3} is invalid. PsIndex$i + PsCount$i must not be greater than 999.", groupNo, command.PsIndexes[groupIndex], command.PsCounts[groupIndex], LineNumber);
+                log.Error("Having Index${0} '{1}', Count${0} '{2}' on line {3} is invalid. Index$i + Count$i must not be greater than 999.", groupNo, command.Indexes[groupIndex], command.Counts[groupIndex], LineNumber);
                 break;
               }
             }
@@ -324,37 +383,37 @@ namespace NetworkSimulator
 
             CommandCancelNeighborhood command = new CommandCancelNeighborhood(LineNumber, line)
             {
-              PsGroups = new List<string>(),
-              PsIndexes = new List<int>(),
-              PsCounts = new List<int>()
+              Groups = new List<string>(),
+              Indexes = new List<int>(),
+              Counts = new List<int>()
             };
 
             for (int i = 0; i < paramCount; i += 3)
             {
-              command.PsGroups.Add(Parts[p++]);
-              command.PsIndexes.Add(int.Parse(Parts[p++]));
-              command.PsCounts.Add(int.Parse(Parts[p++]));
+              command.Groups.Add(Parts[p++]);
+              command.Indexes.Add(int.Parse(Parts[p++]));
+              command.Counts.Add(int.Parse(Parts[p++]));
 
               int groupNo = (i / 3) + 1;
 
-              bool indexValid = (1 <= command.PsIndexes[i]) && (command.PsIndexes[i] <= 999);
+              bool indexValid = (1 <= command.Indexes[i]) && (command.Indexes[i] <= 999);
               if (!indexValid)
               {
-                log.Error("PsIndex${0} '{1}' on line {2} is invalid. It must be an integer between 1 and 999.", groupNo, command.PsIndexes[i], LineNumber);
+                log.Error("Index${0} '{1}' on line {2} is invalid. It must be an integer between 1 and 999.", groupNo, command.Indexes[i], LineNumber);
                 break;
               }
 
-              bool countValid = (1 <= command.PsCounts[i]) && (command.PsCounts[i] <= 999);
+              bool countValid = (1 <= command.Counts[i]) && (command.Counts[i] <= 999);
               if (!countValid)
               {
-                log.Error("PsCount${0} '{1}' on line {2} is invalid. It must be an integer between 1 and 999.", groupNo, command.PsCounts[i], LineNumber);
+                log.Error("Count${0} '{1}' on line {2} is invalid. It must be an integer between 1 and 999.", groupNo, command.Counts[i], LineNumber);
                 break;
               }
 
-              countValid = command.PsIndexes[i] + command.PsCounts[i] <= 999;
+              countValid = command.Indexes[i] + command.Counts[i] <= 999;
               if (!countValid)
               {
-                log.Error("Having PsIndex${0} '{1}', PsCount{0} '{2}' on line {3} is invalid. PsIndex$i + PsCount$i must not be greater than 999.", groupNo, command.PsIndexes[i], command.PsCounts[i], LineNumber);
+                log.Error("Having Index${0} '{1}', Count{0} '{2}' on line {3} is invalid. Index$i + Count$i must not be greater than 999.", groupNo, command.Indexes[i], command.Counts[i], LineNumber);
                 break;
               }
             }
@@ -409,14 +468,14 @@ namespace NetworkSimulator
           {
             if (paramCount != 13)
             {
-              log.Error("Neighbor requires 13 parameters, but {0} parameters found on line {1}.", paramCount, LineNumber);
+              log.Error("Identity requires 13 parameters, but {0} parameters found on line {1}.", paramCount, LineNumber);
               break;
             }
 
             CommandIdentity command = new CommandIdentity(LineNumber, line)
             {
               Name = Parts[p++],
-              Count = int.Parse(Parts[p++]),
+              CreateCount = int.Parse(Parts[p++]),
               IdentityType = Parts[p++],
               Latitude = decimal.Parse(Parts[p++], CultureInfo.InvariantCulture),
               Longitude = decimal.Parse(Parts[p++], CultureInfo.InvariantCulture),
@@ -425,16 +484,16 @@ namespace NetworkSimulator
               ProfileImageChance = int.Parse(Parts[p++]),
               ThumbnailImageMask = Parts[p++],
               ThumbnailImageChance = int.Parse(Parts[p++]),
-              PsGroup = Parts[p++],
-              PsIndex = int.Parse(Parts[p++]),
-              PsCount = int.Parse(Parts[p++])
+              Group = Parts[p++],
+              Index = int.Parse(Parts[p++]),
+              Count = int.Parse(Parts[p++])
             };
 
 
-            bool countValid = (1 <= command.Count) && (command.Count <= 99999);
-            if (!countValid)
+            bool createCountValid = (1 <= command.CreateCount) && (command.CreateCount <= 99999);
+            if (!createCountValid)
             {
-              log.Error("Count '{0}' on line {1} is invalid. It must be an integer between 1 and 99999.", command.Count, LineNumber);
+              log.Error("CreateCount '{0}' on line {1} is invalid. It must be an integer between 1 and 99999.", command.CreateCount, LineNumber);
               break;
             }
 
@@ -473,37 +532,38 @@ namespace NetworkSimulator
               break;
             }
 
-            bool psIndexValid = (1 <= command.PsIndex) && (command.PsIndex <= 999);
-            if (!psIndexValid)
+            bool indexValid = (1 <= command.Index) && (command.Index <= 999);
+            if (!indexValid)
             {
-              log.Error("PsIndex '{0}' on line {1} is invalid. It must be an integer between 1 and 999.", command.PsIndex, LineNumber);
+              log.Error("Index '{0}' on line {1} is invalid. It must be an integer between 1 and 999.", command.Index, LineNumber);
               break;
             }
 
-            bool psCountValid = (1 <= command.PsCount) && (command.PsCount <= 999);
-            if (!psCountValid)
-            {
-              log.Error("PsCount '{0}' on line {1} is invalid. It must be an integer between 1 and 999.", command.PsCount, LineNumber);
-              break;
-            }
-
-            psCountValid = command.PsIndex + command.PsCount <= 999;
-            if (!psCountValid)
-            {
-              log.Error("Having PsIndex '{0}', PsCount '{1}' on line {2} is invalid. PsIndex + PsCount must not be greater than 999.", command.PsIndex, command.PsCount, LineNumber);
-              break;
-            }
-
-            countValid = command.Count - command.PsCount * 20000 <= 0;
+            bool countValid = (1 <= command.Count) && (command.Count <= 999);
             if (!countValid)
             {
-              log.Error("Having PsCount '{0}', Count '{1}' on line {2} is invalid. Count / PsCount must not be greater than 20000.", command.PsCount, command.Count, LineNumber);
+              log.Error("Count '{0}' on line {1} is invalid. It must be an integer between 1 and 999.", command.Count, LineNumber);
+              break;
+            }
+
+            countValid = command.Index + command.Count <= 999;
+            if (!countValid)
+            {
+              log.Error("Having Index '{0}', Count '{1}' on line {2} is invalid. Index + Count must not be greater than 999.", command.Index, command.Count, LineNumber);
+              break;
+            }
+
+            createCountValid = command.CreateCount - command.Count * 20000 <= 0;
+            if (!createCountValid)
+            {
+              log.Error("Having Count '{0}', Count '{1}' on line {2} is invalid. CreateCount / Count must not be greater than 20000.", command.Count, command.CreateCount, LineNumber);
               break;
             }
 
             res = command;
             break;
           }
+
 
         case CommandType.CancelIdentity:
           {
@@ -545,6 +605,205 @@ namespace NetworkSimulator
             break;
           }
 
+
+        case CommandType.Activity:
+          {
+            if (paramCount != 14)
+            {
+              log.Error("Activity requires 14 parameters, but {0} parameters found on line {1}.", paramCount, LineNumber);
+              break;
+            }
+
+            CommandActivity command = new CommandActivity(LineNumber, line)
+            {
+              Name = Parts[p++],
+              CreateCount = int.Parse(Parts[p++]),
+              Latitude = decimal.Parse(Parts[p++], CultureInfo.InvariantCulture),
+              Longitude = decimal.Parse(Parts[p++], CultureInfo.InvariantCulture),
+              PrecisionMin = int.Parse(Parts[p++]),
+              PrecisionMax = int.Parse(Parts[p++]),
+              Radius = int.Parse(Parts[p++]),
+              StartTimeFrom = int.Parse(Parts[p++]),
+              StartTimeTo = int.Parse(Parts[p++]),
+              LifetimeFrom = int.Parse(Parts[p++]),
+              LifetimeTo = int.Parse(Parts[p++]),
+              Group = Parts[p++],
+              Index = int.Parse(Parts[p++]),
+              Count = int.Parse(Parts[p++])
+            };
+
+
+            bool createCountValid = (1 <= command.CreateCount) && (command.CreateCount <= 50000);
+            if (!createCountValid)
+            {
+              log.Error("CreateCount '{0}' on line {1} is invalid. It must be an integer between 1 and 50000.", command.CreateCount, LineNumber);
+              break;
+            }
+
+            bool latitudeValid = new GpsLocation(command.Latitude, 0).IsValid();
+            if (!latitudeValid)
+            {
+              log.Error("Latitude '{0}' on line {1} is invalid. It must be a decimal number between -90 and 90.", command.Latitude, LineNumber);
+              break;
+            }
+
+            bool longitudeValid = new GpsLocation(0, command.Longitude).IsValid();
+            if (!longitudeValid)
+            {
+              log.Error("Longitude '{0}' on line {1}. It must be a decimal number between -179.999999 and 180.", command.Longitude, LineNumber);
+              break;
+            }
+
+            bool precisionMinValid = (0 <= command.PrecisionMin) && (command.PrecisionMin <= 1000);
+            if (!precisionMinValid)
+            {
+              log.Error("PrecisionMin '{0}' on line {1} is invalid. It must be an integer between 0 and 1000.", command.PrecisionMin, LineNumber);
+              break;
+            }
+
+            bool precisionMaxValid = (0 <= command.PrecisionMax) && (command.PrecisionMax <= 1000);
+            if (!precisionMaxValid)
+            {
+              log.Error("PrecisionMax '{0}' on line {1} is invalid. It must be an integer between 0 and 1000.", command.PrecisionMax, LineNumber);
+              break;
+            }
+
+            precisionMaxValid = (0 <= command.PrecisionMax) && (command.PrecisionMax <= 1000);
+            if (!precisionMaxValid)
+            {
+              log.Error("PrecisionMax '{0}' on line {1} is invalid. It must be greater than or equal to PrecisionMin ({2}).", command.PrecisionMax, LineNumber, command.PrecisionMin);
+              break;
+            }
+
+            bool radiusValid = (0 <= command.Radius) && (command.Radius <= MaxRadius);
+            if (!radiusValid)
+            {
+              log.Error("Radius '{0}' given on line {1}. It must be an integer between 0 and {2}.", command.Radius, LineNumber, MaxRadius);
+              break;
+            }
+
+            bool startTimeFromValid = (-86000 <= command.StartTimeFrom) && (command.StartTimeFrom <= 86000);
+            if (!startTimeFromValid)
+            {
+              log.Error("StartTimeFrom '{0}' on line {1} is invalid. It must be an integer between -86000 and 86000.", command.StartTimeFrom, LineNumber);
+              break;
+            }
+
+            bool startTimeToValid = (-86000 <= command.StartTimeTo) && (command.StartTimeTo <= 86000);
+            if (!startTimeToValid)
+            {
+              log.Error("StartTimeTo '{0}' on line {1} is invalid. It must be an integer between -86000 and 86000.", command.StartTimeTo, LineNumber);
+              break;
+            }
+
+            startTimeToValid = command.StartTimeFrom <= command.StartTimeTo;
+            if (!startTimeToValid)
+            {
+              log.Error("StartTimeTo '{0}' on line {1} is invalid. It must be greater than or equal to StartTimeFrom value {2}.", command.StartTimeTo, LineNumber, command.StartTimeFrom);
+              break;
+            }
+
+            bool lifetimeFromValid = (1 <= command.LifetimeFrom) && (command.LifetimeFrom <= 86400);
+            if (!lifetimeFromValid)
+            {
+              log.Error("LifetimeFrom '{0}' on line {1} is invalid. It must be an integer between 1 and 86400.", command.LifetimeFrom, LineNumber);
+              break;
+            }
+
+            lifetimeFromValid = command.StartTimeFrom + command.LifetimeFrom > 0;
+            if (!lifetimeFromValid)
+            {
+              log.Error("LifetimeFrom '{0}' on line {1} is invalid. LifetimeFrom + StartTimeFrom ({2}) must be greater than 0.", command.LifetimeFrom, LineNumber, command.StartTimeFrom);
+              break;
+            }
+
+            bool lifetimeToValid = (1 <= command.LifetimeTo) && (command.LifetimeTo <= 86400);
+            if (!lifetimeToValid)
+            {
+              log.Error("LifetimeTo '{0}' on line {1} is invalid. It must be an integer between 1 and 86400.", command.LifetimeTo, LineNumber);
+              break;
+            }
+
+            lifetimeToValid = command.LifetimeTo >= command.LifetimeFrom;
+            if (!lifetimeToValid)
+            {
+              log.Error("LifetimeTo '{0}' on line {1} is invalid. It must be greater than or equal to LifetimeFrom value {2}.", command.LifetimeTo, LineNumber, command.LifetimeFrom);
+              break;
+            }
+
+            lifetimeToValid = command.StartTimeTo + command.LifetimeTo <= 86400;
+            if (!lifetimeToValid)
+            {
+              log.Error("LifetimeTo '{0}' on line {1} is invalid. LifetimeTo + StartTimeTo ({2}) must be lower than or equal to 86400.", command.LifetimeTo, LineNumber, command.StartTimeTo);
+              break;
+            }
+
+            bool indexValid = (1 <= command.Index) && (command.Index <= 999);
+            if (!indexValid)
+            {
+              log.Error("Index '{0}' on line {1} is invalid. It must be an integer between 1 and 999.", command.Index, LineNumber);
+              break;
+            }
+
+            bool countValid = (1 <= command.Count) && (command.Count <= 999);
+            if (!countValid)
+            {
+              log.Error("Count '{0}' on line {1} is invalid. It must be an integer between 1 and 999.", command.Count, LineNumber);
+              break;
+            }
+
+            countValid = command.Index + command.Count <= 999;
+            if (!countValid)
+            {
+              log.Error("Having Index '{0}', Count '{1}' on line {2} is invalid. Index + Count must not be greater than 999.", command.Index, command.Count, LineNumber);
+              break;
+            }
+
+            res = command;
+            break;
+          }
+
+
+        case CommandType.DeleteActivity:
+          {
+            if (paramCount != 3)
+            {
+              log.Error("DeleteActivity requires 3 parameters, but {0} parameters found on line {1}.", paramCount, LineNumber);
+              break;
+            }
+
+            CommandDeleteActivity command = new CommandDeleteActivity(LineNumber, line)
+            {
+              Name = Parts[p++],
+              Index = int.Parse(Parts[p++]),
+              Count = int.Parse(Parts[p++])
+            };
+
+            bool indexValid = (1 <= command.Index) && (command.Index <= 50000);
+            if (!indexValid)
+            {
+              log.Error("Index '{0}' on line {1} is invalid. It must be an integer between 1 and 50000.", command.Index, LineNumber);
+              break;
+            }
+
+            bool countValid = (1 <= command.Count) && (command.Count <= 50000);
+            if (!countValid)
+            {
+              log.Error("Count '{0}' on line {1} is invalid. It must be an integer between 1 and 50000.", command.Count, LineNumber);
+              break;
+            }
+
+            countValid = command.Index + command.Count <= 50000;
+            if (!countValid)
+            {
+              log.Error("Having Index '{0}', Count '{1}' on line {2} is invalid. Index + Count must not be greater than 50000.", command.Index, command.Count, LineNumber);
+              break;
+            }
+
+            res = command;
+            break;
+          }
+
         case CommandType.TestQuery:
           {
             if (paramCount != 9)
@@ -572,9 +831,9 @@ namespace NetworkSimulator
 
             CommandTestQuery command = new CommandTestQuery(LineNumber, line)
             {
-              PsGroup = Parts[p++],
-              PsIndex = int.Parse(Parts[p++]),
-              PsCount = int.Parse(Parts[p++]),
+              Group = Parts[p++],
+              Index = int.Parse(Parts[p++]),
+              Count = int.Parse(Parts[p++]),
               NameFilter = Parts[p++],
               TypeFilter = Parts[p++],
               IncludeImages = bool.Parse(Parts[p++]),
@@ -584,24 +843,24 @@ namespace NetworkSimulator
             };
 
 
-            bool psIndexValid = (1 <= command.PsIndex) && (command.PsIndex <= 999);
-            if (!psIndexValid)
+            bool indexValid = (1 <= command.Index) && (command.Index <= 999);
+            if (!indexValid)
             {
-              log.Error("PsIndex '{0}' on line {1} is invalid. It must be an integer between 1 and 999.", command.PsIndex, LineNumber);
+              log.Error("Index '{0}' on line {1} is invalid. It must be an integer between 1 and 999.", command.Index, LineNumber);
               break;
             }
 
-            bool psCountValid = (1 <= command.PsCount) && (command.PsCount <= 999);
-            if (!psCountValid)
+            bool countValid = (1 <= command.Count) && (command.Count <= 999);
+            if (!countValid)
             {
-              log.Error("PsCount '{0}' on line {1} is invalid. It must be an integer between 1 and 999.", command.PsCount, LineNumber);
+              log.Error("Count '{0}' on line {1} is invalid. It must be an integer between 1 and 999.", command.Count, LineNumber);
               break;
             }
 
-            psCountValid = command.PsIndex + command.PsCount <= 999;
-            if (!psCountValid)
+            countValid = command.Index + command.Count <= 999;
+            if (!countValid)
             {
-              log.Error("Having PsIndex '{0}', PsCount '{1}' on line {2} is invalid. PsIndex + PsCount must not be greater than 999.", command.PsIndex, command.PsCount, LineNumber);
+              log.Error("Having Index '{0}', Count '{1}' on line {2} is invalid. Index + Count must not be greater than 999.", command.Index, command.Count, LineNumber);
               break;
             }
 
@@ -632,6 +891,144 @@ namespace NetworkSimulator
             res = command;
             break;
           }
+
+
+
+        case CommandType.TestQueryActivity:
+          {
+            if (paramCount != 9)
+            {
+              log.Error("TestQueryActivity requires 9 parameters, but {0} parameters found on line {1}.", paramCount, LineNumber);
+              break;
+            }
+
+            int li = p + 4;
+            string snaStr = Parts[li++];
+            string enbStr = Parts[li++];
+            string latStr = Parts[li++];
+            string lonStr = Parts[li++];
+            string radStr = Parts[li++];
+
+            bool anyStart = snaStr == "ANY";
+            bool anyExpiration = enbStr == "ANY";
+
+            int? startNotAfter = null;
+            if (!anyStart) startNotAfter = int.Parse(snaStr);
+
+            int? expirationNotBefore = null;
+            if (!anyExpiration) expirationNotBefore = int.Parse(enbStr);
+
+
+            decimal latitude = GpsLocation.NoLocation.Latitude;
+            decimal longitude = GpsLocation.NoLocation.Longitude;
+            int radius = 0;
+
+            bool noLocation = latStr == "NO_LOCATION";
+            if (!noLocation)
+            {
+              latitude = decimal.Parse(latStr, CultureInfo.InvariantCulture);
+              longitude = decimal.Parse(lonStr, CultureInfo.InvariantCulture);
+              radius = int.Parse(radStr);
+            }
+
+
+            CommandTestQueryActivity command = new CommandTestQueryActivity(LineNumber, line)
+            {
+              Group = Parts[p++],
+              Index = int.Parse(Parts[p++]),
+              Count = int.Parse(Parts[p++]),
+              TypeFilter = Parts[p++],
+              StartNotAfter = startNotAfter,
+              ExpirationNotBefore = expirationNotBefore,
+              Latitude = latitude,
+              Longitude = longitude,
+              Radius = radius
+            };
+
+
+            bool indexValid = (1 <= command.Index) && (command.Index <= 999);
+            if (!indexValid)
+            {
+              log.Error("Index '{0}' on line {1} is invalid. It must be an integer between 1 and 999.", command.Index, LineNumber);
+              break;
+            }
+
+            bool countValid = (1 <= command.Count) && (command.Count <= 999);
+            if (!countValid)
+            {
+              log.Error("Count '{0}' on line {1} is invalid. It must be an integer between 1 and 999.", command.Count, LineNumber);
+              break;
+            }
+
+            countValid = command.Index + command.Count <= 999;
+            if (!countValid)
+            {
+              log.Error("Having Index '{0}', Count '{1}' on line {2} is invalid. Index + Count must not be greater than 999.", command.Index, command.Count, LineNumber);
+              break;
+            }
+
+            if (command.StartNotAfter != null)
+            {
+              bool startNotAfterValid = (-86400 <= command.StartNotAfter) && (command.StartNotAfter <= 86400);
+              if (!startNotAfterValid)
+              {
+                log.Error("StartNotAfter '{0}' on line {1} is invalid. It must be an integer between -86400 and 86400.", command.StartNotAfter, LineNumber);
+                break;
+              }
+            }
+
+            if (command.ExpirationNotBefore != null)
+            {
+              bool expirationNotBeforeValid = (-86400 <= command.ExpirationNotBefore) && (command.ExpirationNotBefore <= 86400);
+              if (!expirationNotBeforeValid)
+              {
+                log.Error("ExpirationNotBefore '{0}' on line {1} is invalid. It must be an integer between -86400 and 86400.", command.ExpirationNotBefore, LineNumber);
+                break;
+              }
+
+              if (command.StartNotAfter != null)
+              {
+                expirationNotBeforeValid = command.StartNotAfter < command.ExpirationNotBefore;
+                if (!expirationNotBeforeValid)
+                {
+                  log.Error("ExpirationNotBefore '{0}' on line {1} is invalid. It must be greater than StartNotAfter ({2}).", command.ExpirationNotBefore, LineNumber, command.StartNotAfter);
+                  break;
+                }
+              }
+            }
+
+
+            if (!noLocation)
+            {
+              bool latitudeValid = new GpsLocation(command.Latitude, 0).IsValid();
+              if (!latitudeValid)
+              {
+                log.Error("Latitude '{0}' on line {1} is invalid. It must be a decimal number between -90 and 90.", command.Latitude, LineNumber);
+                break;
+              }
+
+              bool longitudeValid = new GpsLocation(0, command.Longitude).IsValid();
+              if (!longitudeValid)
+              {
+                log.Error("Longitude '{0}' on line {1}. It must be a decimal number between -179.999999 and 180.", command.Longitude, LineNumber);
+                break;
+              }
+
+              bool radiusValid = (0 <= command.Radius) && (command.Radius <= MaxRadius);
+              if (!radiusValid)
+              {
+                log.Error("Radius '{0}' given on line {1}. It must be an integer between 0 and {2}.", command.Radius, LineNumber, MaxRadius);
+                break;
+              }
+            }
+
+            res = command;
+            break;
+          }
+
+
+
+
 
         case CommandType.Delay:
           {

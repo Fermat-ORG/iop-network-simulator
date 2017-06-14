@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "NetworkSimulator": {
+      "commandName": "Project",
+      "commandLineArgs": "Scenarios\\scenario-px001.conf"
+    }
+  }
+}

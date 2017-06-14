@@ -12,9 +12,9 @@ using IopCommon;
 namespace NetworkSimulator
 {
   /// <summary>
-  /// Description of profile server instance.
+  /// Base class for profile and proximity server snapshots.
   /// </summary>
-  public class ProfileServerSnapshot
+  public abstract class ServerSnapshotBase
   {
     /// <summary>Name of the instance.</summary>
     public string Name;
@@ -37,12 +37,25 @@ namespace NetworkSimulator
     /// <summary>Port of LOC server.</summary>
     public int LocPort;
 
-    /// <summary>Port of profile server primary interface.</summary>
+    /// <summary>Port of server primary interface.</summary>
     public int PrimaryInterfacePort;
 
-    /// <summary>Port of profile server neighbors interface.</summary>
-    public int ServerNeighborInterfacePort;
+    /// <summary>Port of server neighbors interface.</summary>
+    public int NeighborInterfacePort;
 
+    /// <summary>Network ID of the server.</summary>
+    public string NetworkId;
+
+    /// <summary>Related LOC server instance.</summary>
+    public LocServerSnapshot LocServer;
+  }
+
+
+  /// <summary>
+  /// Description of profile server instance snapshot.
+  /// </summary>
+  public class ProfileServerSnapshot : ServerSnapshotBase
+  {
     /// <summary>Port of profile server non-customer interface.</summary>
     public int ClientNonCustomerInterfacePort;
 
@@ -57,13 +70,23 @@ namespace NetworkSimulator
 
     /// <summary>List of hosted customer identities.</summary>
     public List<string> HostedIdentities;
-
-    /// <summary>Network ID of the profile server.</summary>
-    public string NetworkId;
-
-    /// <summary>Related LOC server instance.</summary>
-    public LocServerSnapshot LocServer;
   }
+
+  /// <summary>
+  /// Description of proximity server instance snapshot.
+  /// </summary>
+  public class ProximityServerSnapshot : ServerSnapshotBase
+  {
+    /// <summary>Port of proximity server client interface.</summary>
+    public int ClientInterfacePort;
+
+    /// <summary>Number of free slots for activities.</summary>
+    public int AvailableActivitySlots;
+
+    /// <summary>List of primary activities.</summary>
+    public List<string> Activities;
+  }
+
 
   /// <summary>
   /// Description of LOC server instance.
@@ -80,16 +103,14 @@ namespace NetworkSimulator
     public List<string> NeighborsNames;
   }
 
+
   /// <summary>
-  /// Description of identity client instance.
+  /// Profile information of the client's identity.
   /// </summary>
-  public class IdentitySnapshot
+  public class IdentityProfileSnapshot
   {
     /// <summary>Identity name.</summary>
     public string Name;
-
-    /// <summary>Hosting profile server name.</summary>
-    public string ProfileServerName;
 
     /// <summary>Identity Type.</summary>
     public string Type;
@@ -117,6 +138,22 @@ namespace NetworkSimulator
 
     /// <summary>Profile version.</summary>
     public SemVer Version;
+  }
+
+
+  /// <summary>
+  /// Description of identity client instance.
+  /// </summary>
+  public class IdentitySnapshot
+  {
+    /// <summary>Identity's profile on its hosting server.</summary>
+    public IdentityProfileSnapshot Profile;
+
+    /// <summary>Identity's profile on the neighborhood servers.</summary>
+    public IdentityProfileSnapshot PropagatedProfile;
+
+    /// <summary>Hosting profile server name.</summary>
+    public string ProfileServerName;
 
     /// <summary>Network identifier of the client's identity.</summary>
     public string IdentityId;
@@ -147,6 +184,84 @@ namespace NetworkSimulator
   }
 
 
+
+
+  /// <summary>
+  /// Activity information snapshot.
+  /// </summary>
+  public class ActivityInfoSnapshot
+  {
+    /// <summary>Activity version.</summary>
+    public SemVer Version;
+
+    /// <summary>Activity ID.</summary>
+    public uint Id;
+
+    /// <summary>Network identifier of the identity that created the activity.</summary>
+    public string OwnerIdentityId;
+
+    /// <summary>Public key the identity that created the activity.</summary>
+    public string OwnerPublicKey;
+
+    /// <summary>Network identifier of the profile server where the owner of the activity has its profile.</summary>
+    public string OwnerProfileServerId;
+
+    /// <summary>IP address of the profile server where the owner of the activity has its profile.</summary>
+    public string OwnerProfileServerIpAddress;
+
+    /// <summary>TCP port of primary interface of the profile server where the owner of the activity has its profile.</summary>
+    public ushort OwnerProfileServerPrimaryPort;
+
+    /// <summary>Activity type.</summary>
+    public string Type;
+
+    /// <summary>GPS location latitude.</summary>
+    public decimal LocationLatitude;
+
+    /// <summary>GPS location longitude.</summary>
+    public decimal LocationLongitude;
+
+    /// <summary>Precision of the activity's location in metres.</summary>
+    public uint PrecisionRadius;
+
+    /// <summary>Time when the activity starts.</summary>
+    public long StartTime;
+
+    /// <summary>Time when the activity expires and can be deleted.</summary>
+    public long ExpirationTime;
+
+    /// <summary>Cryptographic signature of the activity information when represented with a ActivityInformation structure.</summary>
+    public string Signature;
+
+    /// <summary>User defined extra data that serve for satisfying search queries in proximity server network.</summary>
+    public string ExtraData;
+  }
+
+
+
+  /// <summary>
+  /// Description of activity instance.
+  /// </summary>
+  public class ActivitySnapshot
+  {
+    /// <summary>Activity information on its primary server.</summary>
+    public ActivityInfoSnapshot PrimaryInfo;
+
+    /// <summary>Activity information on neighborhood servers.</summary>
+    public ActivityInfoSnapshot PropagatedInfo;
+
+    /// <summary>Primary proximity server name.</summary>
+    public string ProximityServerName;
+
+    /// <summary>Activity owner identity client.</summary>
+    public string IdentityClientName;
+
+    /// <summary>true if the activity is on the server, false otherwise.</summary>
+    public bool HostingActive;
+  }
+
+
+
   /// <summary>
   /// Describes whole state of a simulation instance in a form that can be saved to a file.
   /// </summary>
@@ -157,8 +272,14 @@ namespace NetworkSimulator
     /// <summary>Name of the file with serialized profile server information.</summary>
     public const string ProfileServersFileName = "ProfileServers.json";
 
+    /// <summary>Name of the file with serialized proximity server information.</summary>
+    public const string ProximityServersFileName = "ProximityServers.json";
+
     /// <summary>Name of the file with serialized identities information.</summary>
     public const string IdentitiesFileName = "Identities.json";
+
+    /// <summary>Name of the file with serialized activities information.</summary>
+    public const string ActivitiesFileName = "Activities.json";
 
     /// <summary>Name of the file with serialized images information.</summary>
     public const string ImagesFileName = "Images.json";
@@ -169,8 +290,14 @@ namespace NetworkSimulator
     /// <summary>List of profile servers.</summary>
     public List<ProfileServerSnapshot> ProfileServers;
 
+    /// <summary>List of proximity servers.</summary>
+    public List<ProximityServerSnapshot> ProximityServers;
+
     /// <summary>List of identities.</summary>
     public List<IdentitySnapshot> Identities;
+
+    /// <summary>List of activities.</summary>
+    public List<ActivitySnapshot> Activities;
 
     /// <summary>Date of images used by identities mapped by their SHA256 hash.</summary>
     public Dictionary<string, string> Images;
@@ -180,12 +307,19 @@ namespace NetworkSimulator
 
     /// <summary>Name of profile servers JSON file within the snapshot directory.</summary>
     private string profileServersFile;
+    
+    /// <summary>Name of proximity servers JSON file within the snapshot directory.</summary>
+    private string proximityServersFile;
 
     /// <summary>Name of identities JSON file within the snapshot directory.</summary>
     private string identitiesFile;
 
+    /// <summary>Name of activities JSON file within the snapshot directory.</summary>
+    private string activitiesFile;
+
     /// <summary>Name of images JSON file within the snapshot directory.</summary>
     private string imagesFile;
+
 
     /// <summary>
     /// Initializes snapshot instance.
@@ -195,57 +329,96 @@ namespace NetworkSimulator
     {
       this.Name = Name;
       ProfileServers = new List<ProfileServerSnapshot>();
+      ProximityServers = new List<ProximityServerSnapshot>();
       Identities = new List<IdentitySnapshot>();
+      Activities = new List<ActivitySnapshot>();
       Images = new Dictionary<string, string>(StringComparer.Ordinal);
 
       snapshotDirectory = Path.Combine(CommandProcessor.SnapshotDirectory, this.Name);
       profileServersFile = Path.Combine(snapshotDirectory, ProfileServersFileName);
+      proximityServersFile = Path.Combine(snapshotDirectory, ProximityServersFileName);
       identitiesFile = Path.Combine(snapshotDirectory, IdentitiesFileName);
+      activitiesFile = Path.Combine(snapshotDirectory, ActivitiesFileName);
       imagesFile = Path.Combine(snapshotDirectory, ImagesFileName);
     }
 
+
     /// <summary>
-    /// Stops all running profile servers and takes snapshot of the simulation.
-    /// <para>All profile servers are expected to be stopped when this method is called.</para>
+    /// Stops all running servers and takes snapshot of the simulation.
+    /// <para>All servers are expected to be stopped when this method is called.</para>
     /// </summary>
-    /// <param name="RunningServerNames">List of servers that were running before the snapshot was taken.</param>
+    /// <param name="RunningProfileServerNames">List of profile servers that were running before the snapshot was taken.</param>
     /// <param name="ProfileServers">List of simulation profile servers.</param>
+    /// <param name="RunningProfileServerNames">List of proximity servers that were running before the snapshot was taken.</param>
+    /// <param name="ProximityServers">List of simulation proximity servers.</param>
     /// <param name="IdentityClients">List of simulation identities.</param>
+    /// <param name="Activities">List of simulation activities.</param>
     /// <returns>true if the function succeeds, false otherwise.</returns>
-    public bool Take(HashSet<string> RunningServerNames, Dictionary<string, ProfileServer> ProfileServers, Dictionary<string, IdentityClient> IdentityClients)
+    public bool Take(HashSet<string> RunningProfileServerNames, Dictionary<string, ProfileServer> ProfileServers, HashSet<string> RunningProximityServerNames, Dictionary<string, ProximityServer> ProximityServers, Dictionary<string, IdentityClient> IdentityClients, Dictionary<string, Activity> Activities)
     {
       log.Trace("()");
 
       foreach (ProfileServer server in ProfileServers.Values)
       {
         ProfileServerSnapshot serverSnapshot = server.CreateSnapshot();
-        serverSnapshot.IsRunning = RunningServerNames.Contains(server.Name);
+        serverSnapshot.IsRunning = RunningProfileServerNames.Contains(server.Name);
         this.ProfileServers.Add(serverSnapshot);
+      }
+
+      foreach (ProximityServer server in ProximityServers.Values)
+      {
+        ProximityServerSnapshot serverSnapshot = server.CreateSnapshot();
+        serverSnapshot.IsRunning = RunningProximityServerNames.Contains(server.Name);
+        this.ProximityServers.Add(serverSnapshot);
       }
 
       foreach (IdentityClient identity in IdentityClients.Values)
       {
         IdentitySnapshot identitySnapshot = identity.CreateSnapshot();
 
-        if (identitySnapshot.ProfileImageHash != null)
+        if (identitySnapshot.Profile.ProfileImageHash != null)
         {
-          if (!this.Images.ContainsKey(identitySnapshot.ProfileImageHash))
+          if (!this.Images.ContainsKey(identitySnapshot.Profile.ProfileImageHash))
           {
             string imageDataHex = identity.Profile.ProfileImage.ToHex();
-            this.Images.Add(identitySnapshot.ProfileImageHash, imageDataHex);
+            this.Images.Add(identitySnapshot.Profile.ProfileImageHash, imageDataHex);
           }
         }
 
-        if (identitySnapshot.ThumbnailImageHash != null)
+        if (identitySnapshot.Profile.ThumbnailImageHash != null)
         {
-          if (!this.Images.ContainsKey(identitySnapshot.ThumbnailImageHash))
+          if (!this.Images.ContainsKey(identitySnapshot.Profile.ThumbnailImageHash))
           {
             string imageDataHex = identity.Profile.ThumbnailImage.ToHex();
-            this.Images.Add(identitySnapshot.ThumbnailImageHash, imageDataHex);
+            this.Images.Add(identitySnapshot.Profile.ThumbnailImageHash, imageDataHex);
+          }
+        }
+
+        if (identitySnapshot.PropagatedProfile.ProfileImageHash != null)
+        {
+          if (!this.Images.ContainsKey(identitySnapshot.PropagatedProfile.ProfileImageHash))
+          {
+            string imageDataHex = identity.PropagatedProfile.ProfileImage.ToHex();
+            this.Images.Add(identitySnapshot.PropagatedProfile.ProfileImageHash, imageDataHex);
+          }
+        }
+
+        if (identitySnapshot.PropagatedProfile.ThumbnailImageHash != null)
+        {
+          if (!this.Images.ContainsKey(identitySnapshot.PropagatedProfile.ThumbnailImageHash))
+          {
+            string imageDataHex = identity.PropagatedProfile.ThumbnailImage.ToHex();
+            this.Images.Add(identitySnapshot.PropagatedProfile.ThumbnailImageHash, imageDataHex);
           }
         }
 
         this.Identities.Add(identitySnapshot);
+      }
+
+      foreach (Activity activity in Activities.Values)
+      {
+        ActivitySnapshot activitySnapshot = activity.CreateSnapshot();
+        this.Activities.Add(activitySnapshot);
       }
 
 
@@ -268,11 +441,15 @@ namespace NetworkSimulator
         try
         {
           string serializedProfileServers = JsonConvert.SerializeObject(this.ProfileServers, Formatting.Indented);
+          string serializedProximityServers = JsonConvert.SerializeObject(this.ProximityServers, Formatting.Indented);
           string serializedIdentities = JsonConvert.SerializeObject(this.Identities, Formatting.Indented);
+          string serializedActivities = JsonConvert.SerializeObject(this.Activities, Formatting.Indented);
           string serializedImages = JsonConvert.SerializeObject(this.Images, Formatting.Indented);
 
           File.WriteAllText(profileServersFile, serializedProfileServers);
+          File.WriteAllText(proximityServersFile, serializedProximityServers);
           File.WriteAllText(identitiesFile, serializedIdentities);
+          File.WriteAllText(activitiesFile, serializedActivities);
           File.WriteAllText(imagesFile, serializedImages);
         }
         catch (Exception e)
@@ -284,7 +461,10 @@ namespace NetworkSimulator
 
       if (!error)
       {
-        foreach (ProfileServer server in ProfileServers.Values)
+        List<ServerBase> allServers = new List<ServerBase>();
+        allServers.AddRange(ProfileServers.Values);
+        allServers.AddRange(ProximityServers.Values);
+        foreach (ServerBase server in allServers)
         {
           string serverInstanceDirectory = server.GetInstanceDirectoryName();
           string snapshotInstanceDirectory = Path.Combine(new string[] { snapshotDirectory, "bin", server.Name });
@@ -316,6 +496,7 @@ namespace NetworkSimulator
       return res;
     }
 
+
     /// <summary>
     /// Loads snapshot from snapshot folder.
     /// </summary>
@@ -335,11 +516,26 @@ namespace NetworkSimulator
         ProfileServers = JsonConvert.DeserializeObject<List<ProfileServerSnapshot>>(serializedProfileServers);
 
 
+        log.Debug("Loading proximity servers information.");
+        string serializedProximityServers = File.ReadAllText(proximityServersFile);
+
+        log.Debug("Deserializing proximity servers information.");
+        ProximityServers = JsonConvert.DeserializeObject<List<ProximityServerSnapshot>>(serializedProximityServers);
+
+
         log.Debug("Loading identities information.");
         string serializedIdentities = File.ReadAllText(identitiesFile);
 
         log.Debug("Deserializing identities information.");
         Identities = JsonConvert.DeserializeObject<List<IdentitySnapshot>>(serializedIdentities);
+
+
+        log.Debug("Loading activities information.");
+        string serializedActivities = File.ReadAllText(activitiesFile);
+
+        log.Debug("Deserializing activities information.");
+        Activities = JsonConvert.DeserializeObject<List<ActivitySnapshot>>(serializedActivities);
+
 
         log.Debug("Loading images information.");
         string serializedImages = File.ReadAllText(imagesFile);
@@ -351,7 +547,22 @@ namespace NetworkSimulator
         log.Debug("Loading profile servers instance folders.");
         foreach (ProfileServerSnapshot server in ProfileServers)
         {
-          string serverInstanceDirectory = ProfileServer.GetInstanceDirectoryName(server.Name);
+          string serverInstanceDirectory = ServerBase.GetInstanceDirectoryName(server.Name, ServerType.Profile);
+          string snapshotInstanceDirectory = Path.Combine(new string[] { snapshotDirectory, "bin", server.Name });
+          log.Debug("Copying '{0}' to '{1}'.", snapshotInstanceDirectory, serverInstanceDirectory);
+          if (!Helpers.DirectoryCopy(snapshotInstanceDirectory, serverInstanceDirectory))
+          {
+            log.Error("Unable to copy files from directory '{0}' to '{1}'.", snapshotInstanceDirectory, serverInstanceDirectory);
+            error = true;
+            break;
+          }
+        }
+
+
+        log.Debug("Loading proximity servers instance folders.");
+        foreach (ProximityServerSnapshot server in ProximityServers)
+        {
+          string serverInstanceDirectory = ServerBase.GetInstanceDirectoryName(server.Name, ServerType.Proximity);
           string snapshotInstanceDirectory = Path.Combine(new string[] { snapshotDirectory, "bin", server.Name });
           log.Debug("Copying '{0}' to '{1}'.", snapshotInstanceDirectory, serverInstanceDirectory);
           if (!Helpers.DirectoryCopy(snapshotInstanceDirectory, serverInstanceDirectory))
@@ -374,4 +585,4 @@ namespace NetworkSimulator
       return res;
     }
   }
-  }
+}
